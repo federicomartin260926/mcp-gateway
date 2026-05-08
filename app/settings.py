@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    service_name: str = "mcp-gateway"
+    service_version: str = Field(default="0.1.0", alias="SERVICE_VERSION")
+    app_env: str = Field(default="dev", alias="APP_ENV")
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=8010, alias="PORT")
+    log_level: str = Field(default="info", alias="LOG_LEVEL")
+    mcp_auth_token: str = Field(default="", alias="MCP_AUTH_TOKEN")
+    mcp_allowed_hosts: str = Field(default="", alias="MCP_ALLOWED_HOSTS")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
