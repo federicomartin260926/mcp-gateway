@@ -9,10 +9,12 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.settings import Settings
+from app.tools.appointment_availability import appointment_availability
 from app.tools.contact_context import contact_context
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
 
+appointment_availability_module = importlib.import_module("app.tools.appointment_availability")
 contact_context_module = importlib.import_module("app.tools.contact_context")
 
 MCP_HEADERS = {
@@ -54,6 +56,7 @@ def test_info_endpoint_lists_tools():
     assert "echo" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context_mock" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context" in [tool["name"] for tool in payload["available_tools"]]
+    assert "appointment_availability" in [tool["name"] for tool in payload["available_tools"]]
 
 
 def test_mcp_discovery_and_tool_call_work_via_streamable_http():
@@ -94,6 +97,7 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "echo" in [tool["name"] for tool in tools]
         assert "contact_context_mock" in [tool["name"] for tool in tools]
         assert "contact_context" in [tool["name"] for tool in tools]
+        assert "appointment_availability" in [tool["name"] for tool in tools]
 
         call_response = client.post(
             "/mcp",
@@ -165,6 +169,133 @@ def test_contact_context_mock_returns_expected_payload():
     assert payload["contact"]["name"] == "Cliente Demo"
     assert payload["contact"]["status"] == "lead"
     assert payload["contact"]["stage"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_appointment_availability_without_webhook_returns_not_configured(monkeypatch):
+    monkeypatch.setattr(
+        appointment_availability_module,
+        "get_settings",
+        lambda: Settings(APPOINTMENT_AVAILABILITY_WEBHOOK_URL=""),
+    )
+
+    payload = await appointment_availability(date_from="2026-05-11", date_to="2026-05-15")
+
+    assert payload["ok"] is False
+    assert payload["available"] is False
+    assert payload["error_code"] == "not_configured"
+
+
+@pytest.mark.asyncio
+async def test_appointment_availability_requires_date_from_and_date_to(monkeypatch):
+    monkeypatch.setattr(
+        appointment_availability_module,
+        "get_settings",
+        lambda: Settings(APPOINTMENT_AVAILABILITY_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+
+    missing_date_from = await appointment_availability(date_from=None, date_to="2026-05-15")
+    missing_date_to = await appointment_availability(date_from="2026-05-11", date_to=None)
+
+    assert missing_date_from["error_code"] == "validation_error"
+    assert missing_date_to["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_appointment_availability_posts_expected_payload(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "available": True,
+                "timezone": "Europe/Madrid",
+                "slots": [
+                    {
+                        "start": "2026-05-11T09:00:00+02:00",
+                        "end": "2026-05-11T09:30:00+02:00",
+                        "label": None,
+                        "owner": {
+                            "id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
+                            "name": "Carla",
+                            "email": "agente@gmail.com",
+                            "preferred": False,
+                        },
+                    }
+                ],
+                "message": "Hay 6 hueco(s) disponible(s) de 6 encontrados.",
+                "raw_summary": {
+                    "mode": "multi_owner",
+                    "durationMinutes": 30,
+                    "ownersCount": 3,
+                    "totalSlots": 6,
+                    "returnedSlots": 6,
+                    "preferredOwnerId": None,
+                    "preferredOwnerName": None,
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        appointment_availability_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_AVAILABILITY_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_availability_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_availability(
+        tenant_id="019dddb7-db7b-7cdd-963e-4294476ba1e7",
+        date_from="2026-05-11",
+        date_to="2026-05-15",
+        timezone="  ",
+        duration_minutes=30,
+        limit=6,
+        service_ref="null",
+        owner_ref="",
+        contact={
+            "phone": " +34611949358 ",
+            "email": "null",
+            "name": " Lucia Garcia ",
+        },
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer secret-token",
+    }
+    assert captured["json"] == {
+        "tool": "appointment_availability",
+        "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+        "date_from": "2026-05-11",
+        "date_to": "2026-05-15",
+        "timezone": "Europe/Madrid",
+        "duration_minutes": 30,
+        "limit": 6,
+        "service_ref": None,
+        "owner_ref": None,
+        "contact": {
+            "phone": "+34611949358",
+            "email": None,
+            "name": "Lucia Garcia",
+        },
+        "source": "mcp-gateway",
+    }
+    assert payload["ok"] is True
+    assert payload["available"] is True
+    assert payload["timezone"] == "Europe/Madrid"
+    assert payload["slots"][0]["owner"]["name"] == "Carla"
+    assert payload["message"].startswith("Hay 6")
 
 
 @pytest.mark.asyncio
@@ -270,4 +401,24 @@ async def test_contact_context_timeout_returns_timeout_error(monkeypatch):
     payload = await contact_context(phone="+34999999999")
 
     assert payload["found"] is False
+    assert payload["error_code"] == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_appointment_availability_timeout_returns_timeout_error(monkeypatch):
+    request = httpx.Request("POST", "https://n8n.example/webhook")
+
+    async def fake_post(self, url, json=None, headers=None):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    monkeypatch.setattr(
+        appointment_availability_module,
+        "get_settings",
+        lambda: Settings(APPOINTMENT_AVAILABILITY_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+    monkeypatch.setattr(appointment_availability_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_availability(date_from="2026-05-11", date_to="2026-05-15")
+
+    assert payload["ok"] is False
     assert payload["error_code"] == "timeout"

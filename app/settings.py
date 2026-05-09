@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     contact_context_webhook_url: str = Field(default="", alias="CONTACT_CONTEXT_WEBHOOK_URL")
     n8n_webhook_bearer_token: str = Field(default="", alias="N8N_WEBHOOK_BEARER_TOKEN")
     contact_context_timeout_seconds: float = Field(default=5, alias="CONTACT_CONTEXT_TIMEOUT_SECONDS")
+    appointment_availability_webhook_url: str = Field(default="", alias="APPOINTMENT_AVAILABILITY_WEBHOOK_URL")
+    appointment_availability_timeout_seconds: float = Field(default=8, alias="APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS")
 
 
 @lru_cache
