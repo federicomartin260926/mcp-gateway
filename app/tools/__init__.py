@@ -1,5 +1,6 @@
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
+from app.tools.contact_context import contact_context
 
 AVAILABLE_TOOLS = [
     {
@@ -9,5 +10,9 @@ AVAILABLE_TOOLS = [
     {
         "name": "contact_context_mock",
         "description": "Devuelve contexto mock de un contacto para validar tool calling.",
+    },
+    {
+        "name": "contact_context",
+        "description": "Get commercial context for a contact by phone or email.",
     },
 ]

@@ -1,0 +1,17 @@
+services:
+  mcp-gateway:
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://mcp-gateway:8010
+    restart: unless-stopped
+    depends_on:
+      - mcp-gateway
+    networks:
+      - mcp_internal

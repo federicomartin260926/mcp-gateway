@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="info", alias="LOG_LEVEL")
     mcp_auth_token: str = Field(default="", alias="MCP_AUTH_TOKEN")
     mcp_allowed_hosts: str = Field(default="", alias="MCP_ALLOWED_HOSTS")
+    contact_context_webhook_url: str = Field(default="", alias="CONTACT_CONTEXT_WEBHOOK_URL")
+    n8n_webhook_bearer_token: str = Field(default="", alias="N8N_WEBHOOK_BEARER_TOKEN")
+    contact_context_timeout_seconds: float = Field(default=5, alias="CONTACT_CONTEXT_TIMEOUT_SECONDS")
 
 
 @lru_cache

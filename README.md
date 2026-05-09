@@ -10,6 +10,7 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
 - Incluye dos tools iniciales:
   - `echo`
   - `contact_context_mock`
+- Incluye la tool real `contact_context`, delegada a un webhook n8n configurable.
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
 
@@ -36,6 +37,46 @@ make up
 ```
 
 Con el override local, el servicio también queda publicado en `http://localhost:8010`.
+
+## Desarrollo con Cloudflare Tunnel
+
+Para levantar el stack de desarrollo con el túnel desde Docker Compose:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+Para ver la URL pública que asigna `cloudflared`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f cloudflared
+```
+
+También puedes verla en Docker Desktop, dentro del contenedor `cloudflared`, en la pestaña `Logs`.
+La URL `https://<algo>.trycloudflare.com` que aparezca ahí es la que debes copiar en la URL del servidor MCP correspondiente, por ejemplo en `sales-agent`.
+
+Validación local:
+
+```bash
+curl -sS http://localhost:8010/health | jq
+curl -sS http://localhost:8010/info | jq
+```
+
+Validación pública:
+
+```bash
+curl -sS https://<url-trycloudflare>/health | jq
+curl -sS https://<url-trycloudflare>/info | jq
+```
+
+La URL a configurar en `sales-agent` es:
+
+```text
+https://<url-trycloudflare>/mcp
+```
+
+La URL del quick tunnel es temporal y puede cambiar al recrear el contenedor `cloudflared`.
+Para un entorno estable a futuro, conviene migrar a un named tunnel con dominio fijo.
 
 ## Host validation MCP
 
@@ -74,10 +115,86 @@ Si está vacío:
 
 - el acceso queda abierto para desarrollo
 
+## Contact context
+
+Variables de entorno:
+
+- `CONTACT_CONTEXT_WEBHOOK_URL`
+- `N8N_WEBHOOK_BEARER_TOKEN`
+- `CONTACT_CONTEXT_TIMEOUT_SECONDS`
+
+La tool `contact_context` consulta contexto comercial real delegando en un webhook n8n.
+Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un payload normalizado con `error_code: "not_configured"` y no llama al upstream.
+
+### Input
+
+```json
+{
+  "phone": "string | null",
+  "email": "string | null",
+  "name": "string | null",
+  "tenant_id": "string | null",
+  "channel": "string | null"
+}
+```
+
+### Reglas
+
+- exige al menos `phone` o `email` cuando hay webhook configurado
+- normaliza strings vacíos, espacios y valores tipo `"null"` a `null`
+- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- usa `CONTACT_CONTEXT_TIMEOUT_SECONDS` con valor por defecto `5`
+
+### Payload enviado a n8n
+
+```json
+{
+  "tool": "contact_context",
+  "tenant_id": "string | null",
+  "contact": {
+    "phone": "string | null",
+    "email": "string | null",
+    "name": "string | null"
+  },
+  "channel": "string | null",
+  "source": "mcp-gateway"
+}
+```
+
+### Output normalizado esperado
+
+```json
+{
+  "found": true,
+  "contact": {
+    "name": "Cliente Demo",
+    "type": "lead",
+    "status": "lead",
+    "stage": "new",
+    "owner": null,
+    "last_interaction": null
+  },
+  "appointments": {
+    "next": null,
+    "items": []
+  },
+  "open_opportunities": [],
+  "sales": {},
+  "flags": {
+    "needs_human": false,
+    "do_not_contact": false
+  },
+  "summary": "Resumen breve útil para el LLM"
+}
+```
+
+Si hay error de configuración, validación o upstream, la tool devuelve el mismo esquema con `found: false`, `summary` útil para el LLM y `error_code`.
+
 ## Tools disponibles
 
 - `echo`
 - `contact_context_mock`
+- `contact_context`
 
 ### `echo`
 
@@ -123,7 +240,7 @@ Configura la `ExternalTool` MCP remota en `sales-agent` con algo como:
 - `provider`: `openai_remote_mcp`
 - `server_label`: `tech_investments_mcp`
 - `server_url`: `https://mcp.tech-investments.net`
-- `allowed_tools`: `["echo", "contact_context_mock"]`
+- `allowed_tools`: `["echo", "contact_context_mock", "contact_context"]`
 
 Si tu cliente MCP necesita la ruta explícita, usa el endpoint `/mcp`.
 
@@ -136,6 +253,21 @@ make mcp-smoke
 ```
 
 Ese test ejecuta `initialize`, `tools/list` y `tools/call` contra `/mcp`.
+
+Smoke test rápido:
+
+```bash
+curl -s http://localhost:8010/info | jq '.available_tools'
+```
+
+o contra MCP:
+
+```bash
+curl -s http://localhost:8010/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
 
 ## Tests
 

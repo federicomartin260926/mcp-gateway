@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+import importlib
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.settings import Settings
+from app.tools.contact_context import contact_context
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
+
+contact_context_module = importlib.import_module("app.tools.contact_context")
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -47,6 +53,7 @@ def test_info_endpoint_lists_tools():
     assert payload["environment"] == "dev"
     assert "echo" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context_mock" in [tool["name"] for tool in payload["available_tools"]]
+    assert "contact_context" in [tool["name"] for tool in payload["available_tools"]]
 
 
 def test_mcp_discovery_and_tool_call_work_via_streamable_http():
@@ -86,6 +93,7 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         tools = tools_payload["result"]["tools"]
         assert "echo" in [tool["name"] for tool in tools]
         assert "contact_context_mock" in [tool["name"] for tool in tools]
+        assert "contact_context" in [tool["name"] for tool in tools]
 
         call_response = client.post(
             "/mcp",
@@ -157,3 +165,109 @@ def test_contact_context_mock_returns_expected_payload():
     assert payload["contact"]["name"] == "Cliente Demo"
     assert payload["contact"]["status"] == "lead"
     assert payload["contact"]["stage"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_contact_context_without_webhook_returns_not_configured(monkeypatch):
+    monkeypatch.setattr(contact_context_module, "get_settings", lambda: Settings(CONTACT_CONTEXT_WEBHOOK_URL=""))
+
+    payload = await contact_context(phone="+34123456789")
+
+    assert payload["found"] is False
+    assert payload["error_code"] == "not_configured"
+
+
+@pytest.mark.asyncio
+async def test_contact_context_without_phone_or_email_returns_validation_error(monkeypatch):
+    monkeypatch.setattr(
+        contact_context_module,
+        "get_settings",
+        lambda: Settings(CONTACT_CONTEXT_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+
+    payload = await contact_context(name="Cliente Demo")
+
+    assert payload["found"] is False
+    assert payload["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_contact_context_posts_expected_payload(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "found": True,
+                "contact": {
+                    "name": "Cliente Demo",
+                    "type": "lead",
+                    "status": "lead",
+                    "stage": "new",
+                },
+                "summary": "Cliente demo",
+            },
+        )
+
+    monkeypatch.setattr(
+        contact_context_module,
+        "get_settings",
+        lambda: Settings(
+            CONTACT_CONTEXT_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            CONTACT_CONTEXT_TIMEOUT_SECONDS=7,
+        ),
+    )
+    monkeypatch.setattr(contact_context_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await contact_context(
+        phone=" +34999999999 ",
+        email="null",
+        name="  Cliente Demo  ",
+        tenant_id=" tenant-1 ",
+        channel=" whatsapp ",
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer secret-token",
+    }
+    assert captured["json"] == {
+        "tool": "contact_context",
+        "tenant_id": "tenant-1",
+        "contact": {
+            "phone": "+34999999999",
+            "email": None,
+            "name": "Cliente Demo",
+        },
+        "channel": "whatsapp",
+        "source": "mcp-gateway",
+    }
+    assert payload["found"] is True
+    assert payload["contact"]["name"] == "Cliente Demo"
+
+
+@pytest.mark.asyncio
+async def test_contact_context_timeout_returns_timeout_error(monkeypatch):
+    request = httpx.Request("POST", "https://n8n.example/webhook")
+
+    async def fake_post(self, url, json=None, headers=None):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    monkeypatch.setattr(
+        contact_context_module,
+        "get_settings",
+        lambda: Settings(CONTACT_CONTEXT_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+    monkeypatch.setattr(contact_context_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await contact_context(phone="+34999999999")
+
+    assert payload["found"] is False
+    assert payload["error_code"] == "timeout"
