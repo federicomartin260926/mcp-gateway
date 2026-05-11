@@ -12,8 +12,10 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
   - `contact_context_mock`
   - `contact_context`
   - `appointment_availability`
+  - `services_search`
 - Incluye la tool real `contact_context`, delegada a un webhook n8n configurable.
 - Incluye la tool real `appointment_availability`, delegada a un webhook n8n configurable para disponibilidad de citas.
+- Incluye la tool real `services_search`, delegada a un webhook n8n configurable para buscar productos y servicios del CRM.
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
 
@@ -34,6 +36,7 @@ La guía operativa completa está en [docs/n8n-postman-workflow.md](docs/n8n-pos
 
 - `contact_context` ya validado.
 - `appointment_availability` ya validado.
+- `services_search` ya validado.
 - `appointment_confirm` ya validado en n8n.
 - `appointment_events`, `appointment_cancel` y `appointment_reschedule` preparados como workflows importables y colección Postman actualizada.
 
@@ -311,12 +314,96 @@ Si `APPOINTMENT_AVAILABILITY_WEBHOOK_URL` no está configurada, devuelve un payl
 
 Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `available: false`, `slots: []`, `message` útil y `error_code`.
 
+## Services search
+
+Variables de entorno:
+
+- `SERVICES_SEARCH_WEBHOOK_URL`
+- `SERVICES_SEARCH_TIMEOUT_SECONDS`
+- `N8N_WEBHOOK_BEARER_TOKEN`
+
+La tool `services_search` consulta productos y servicios reales delegando en un webhook n8n.
+Si `SERVICES_SEARCH_WEBHOOK_URL` no está configurada, devuelve un payload normalizado con `error_code: "not_configured"` y no llama al upstream.
+
+### Input
+
+```json
+{
+  "tenant_id": "string | null",
+  "query": "string | null",
+  "bookable": "boolean | null",
+  "active": true,
+  "category": "string | null",
+  "limit": 10
+}
+```
+
+### Reglas
+
+- normaliza strings vacíos, `"null"` y `"undefined"` a `null`
+- limita `limit` entre `1` y `30`
+- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- usa `SERVICES_SEARCH_TIMEOUT_SECONDS` con valor por defecto `8`
+
+### Payload enviado a n8n
+
+```json
+{
+  "tool": "services_search",
+  "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+  "query": "whatsapp",
+  "bookable": null,
+  "active": true,
+  "category": null,
+  "limit": 10,
+  "source": "mcp-gateway"
+}
+```
+
+### Output esperado
+
+```json
+{
+  "ok": true,
+  "found": true,
+  "count": 4,
+  "items": [
+    {
+      "id": "...",
+      "name": "...",
+      "slug": "...",
+      "integration_key": "...",
+      "description": "...",
+      "base_price_cents": 120000,
+      "currency": "EUR",
+      "category": {
+        "id": "...",
+        "name": "Automatización",
+        "slug": "automation"
+      },
+      "is_bookable": false,
+      "is_billable": true,
+      "duration_minutes": null,
+      "buffer_before_minutes": 0,
+      "buffer_after_minutes": 0,
+      "active": true
+    }
+  ],
+  "categories": [],
+  "message": "...",
+  "raw_summary": {}
+}
+```
+
+Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `found: false`, `count: 0`, `items: []`, `categories: []`, `message` útil y `error_code`.
+
 ## Tools disponibles
 
 - `echo`
 - `contact_context_mock`
 - `contact_context`
 - `appointment_availability`
+- `services_search`
 
 ### `echo`
 
@@ -362,7 +449,7 @@ Configura la `ExternalTool` MCP remota en `sales-agent` con algo como:
 - `provider`: `openai_remote_mcp`
 - `server_label`: `tech_investments_mcp`
 - `server_url`: `https://mcp.tech-investments.net`
-- `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability"]`
+- `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability", "services_search"]`
 
 Si tu cliente MCP necesita la ruta explícita, usa el endpoint `/mcp`.
 
@@ -416,6 +503,38 @@ curl -sS http://localhost:5680/webhook-test/sa-appointment-availability \
     },
     "source": "mcp-gateway"
   }'
+```
+
+Ejemplo directo para `services_search`:
+
+```bash
+curl -sS http://localhost:5680/webhook-test/sa-services-search \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer n8n_integrations_service_token_local' \
+  -d '{
+    "tool": "services_search",
+    "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+    "query": "whatsapp",
+    "bookable": null,
+    "active": true,
+    "category": null,
+    "limit": 10,
+    "source": "mcp-gateway"
+  }'
+```
+
+Ejemplo esperado desde MCP:
+
+```json
+{
+  "name": "services_search",
+  "arguments": {
+    "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+    "query": "whatsapp",
+    "active": true,
+    "limit": 10
+  }
+}
 ```
 
 ## Tests

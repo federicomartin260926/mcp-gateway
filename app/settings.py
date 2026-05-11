@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     contact_context_timeout_seconds: float = Field(default=5, alias="CONTACT_CONTEXT_TIMEOUT_SECONDS")
     appointment_availability_webhook_url: str = Field(default="", alias="APPOINTMENT_AVAILABILITY_WEBHOOK_URL")
     appointment_availability_timeout_seconds: float = Field(default=8, alias="APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS")
+    services_search_webhook_url: str = Field(default="", alias="SERVICES_SEARCH_WEBHOOK_URL")
+    services_search_timeout_seconds: float = Field(default=8, alias="SERVICES_SEARCH_TIMEOUT_SECONDS")
 
 
 @lru_cache

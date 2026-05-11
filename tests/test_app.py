@@ -13,9 +13,11 @@ from app.tools.appointment_availability import appointment_availability
 from app.tools.contact_context import contact_context
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
+from app.tools.services_search import services_search
 
 appointment_availability_module = importlib.import_module("app.tools.appointment_availability")
 contact_context_module = importlib.import_module("app.tools.contact_context")
+services_search_module = importlib.import_module("app.tools.services_search")
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -57,6 +59,7 @@ def test_info_endpoint_lists_tools():
     assert "contact_context_mock" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context" in [tool["name"] for tool in payload["available_tools"]]
     assert "appointment_availability" in [tool["name"] for tool in payload["available_tools"]]
+    assert "services_search" in [tool["name"] for tool in payload["available_tools"]]
 
 
 def test_mcp_discovery_and_tool_call_work_via_streamable_http():
@@ -98,6 +101,7 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "contact_context_mock" in [tool["name"] for tool in tools]
         assert "contact_context" in [tool["name"] for tool in tools]
         assert "appointment_availability" in [tool["name"] for tool in tools]
+        assert "services_search" in [tool["name"] for tool in tools]
 
         call_response = client.post(
             "/mcp",
@@ -419,6 +423,139 @@ async def test_appointment_availability_timeout_returns_timeout_error(monkeypatc
     monkeypatch.setattr(appointment_availability_module.httpx.AsyncClient, "post", fake_post)
 
     payload = await appointment_availability(date_from="2026-05-11", date_to="2026-05-15")
+
+    assert payload["ok"] is False
+    assert payload["error_code"] == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_services_search_without_webhook_returns_not_configured(monkeypatch):
+    monkeypatch.setattr(
+        services_search_module,
+        "get_settings",
+        lambda: Settings(SERVICES_SEARCH_WEBHOOK_URL=""),
+    )
+
+    payload = await services_search(query="whatsapp")
+
+    assert payload["ok"] is False
+    assert payload["found"] is False
+    assert payload["error_code"] == "not_configured"
+
+
+@pytest.mark.asyncio
+async def test_services_search_rejects_invalid_limit(monkeypatch):
+    monkeypatch.setattr(
+        services_search_module,
+        "get_settings",
+        lambda: Settings(SERVICES_SEARCH_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+
+    payload = await services_search(limit=True)
+
+    assert payload["ok"] is False
+    assert payload["error_code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_services_search_posts_expected_payload(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "found": True,
+                "count": 4,
+                "items": [
+                    {
+                        "id": "service-1",
+                        "name": "WhatsApp Automation",
+                        "slug": "whatsapp-automation",
+                        "integration_key": "wa-automation",
+                        "description": "Servicio demo",
+                        "base_price_cents": 120000,
+                        "currency": "EUR",
+                        "category": {
+                            "id": "cat-1",
+                            "name": "Automatización",
+                            "slug": "automation",
+                        },
+                        "is_bookable": False,
+                        "is_billable": True,
+                        "duration_minutes": None,
+                        "buffer_before_minutes": 0,
+                        "buffer_after_minutes": 0,
+                        "active": True,
+                    }
+                ],
+                "categories": [],
+                "message": "4 services found",
+                "raw_summary": {},
+            },
+        )
+
+    monkeypatch.setattr(
+        services_search_module,
+        "get_settings",
+        lambda: Settings(
+            SERVICES_SEARCH_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            SERVICES_SEARCH_TIMEOUT_SECONDS=11,
+        ),
+    )
+    monkeypatch.setattr(services_search_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await services_search(
+        tenant_id=" 019dddb7-db7b-7cdd-963e-4294476ba1e7 ",
+        query=" whatsapp ",
+        bookable=None,
+        active=True,
+        category=" null ",
+        limit=30,
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer secret-token",
+    }
+    assert captured["json"] == {
+        "tool": "services_search",
+        "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+        "query": "whatsapp",
+        "bookable": None,
+        "active": True,
+        "category": None,
+        "limit": 30,
+        "source": "mcp-gateway",
+    }
+    assert payload["ok"] is True
+    assert payload["found"] is True
+    assert payload["count"] == 4
+    assert payload["items"][0]["category"]["name"] == "Automatización"
+
+
+@pytest.mark.asyncio
+async def test_services_search_timeout_returns_timeout_error(monkeypatch):
+    request = httpx.Request("POST", "https://n8n.example/webhook")
+
+    async def fake_post(self, url, json=None, headers=None):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    monkeypatch.setattr(
+        services_search_module,
+        "get_settings",
+        lambda: Settings(SERVICES_SEARCH_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+    monkeypatch.setattr(services_search_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await services_search(query="whatsapp")
 
     assert payload["ok"] is False
     assert payload["error_code"] == "timeout"

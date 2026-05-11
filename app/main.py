@@ -11,7 +11,14 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.routing import Route
 
 from app.settings import Settings, get_settings
-from app.tools import AVAILABLE_TOOLS, appointment_availability, contact_context, contact_context_mock, echo
+from app.tools import (
+    AVAILABLE_TOOLS,
+    appointment_availability,
+    contact_context,
+    contact_context_mock,
+    echo,
+    services_search,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +74,7 @@ def build_mcp_server() -> FastMCP:
     mcp.tool()(contact_context_mock)
     mcp.tool()(contact_context)
     mcp.tool()(appointment_availability)
+    mcp.tool()(services_search)
     return mcp
 
 
