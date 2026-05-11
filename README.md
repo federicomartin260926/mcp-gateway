@@ -17,6 +17,26 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
 
+## Flujo de trabajo con n8n y Postman
+
+Este proyecto se usa con un flujo práctico para acelerar la creación y validación de tools MCP:
+
+1. Diseñar primero el contrato de la tool MCP.
+2. Crear o importar el workflow n8n.
+3. Probar el webhook n8n directo con Postman o `curl`.
+4. Implementar la tool MCP real en `mcp-gateway`.
+5. Probar `/info` y `tools/list`.
+6. Probar end-to-end desde `sales-agent` con OpenAI Responses API y MCP remoto.
+
+La guía operativa completa está en [docs/n8n-postman-workflow.md](docs/n8n-postman-workflow.md).
+
+## Estado actual de agenda
+
+- `contact_context` ya validado.
+- `appointment_availability` ya validado.
+- `appointment_confirm` ya validado en n8n.
+- `appointment_events`, `appointment_cancel` y `appointment_reschedule` preparados como workflows importables y colección Postman actualizada.
+
 ## Endpoints
 
 - `GET /health`
@@ -345,6 +365,8 @@ Configura la `ExternalTool` MCP remota en `sales-agent` con algo como:
 - `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability"]`
 
 Si tu cliente MCP necesita la ruta explícita, usa el endpoint `/mcp`.
+
+Para pruebas reales con OpenAI Responses API, el flujo recomendado es validar primero el webhook n8n, después el descubrimiento MCP en `mcp-gateway` y, por último, el uso desde `sales-agent`.
 
 ## Validación local
 
