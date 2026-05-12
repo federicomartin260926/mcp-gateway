@@ -2,6 +2,7 @@ from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
 from app.tools.contact_context import contact_context
 from app.tools.appointment_availability import appointment_availability
+from app.tools.appointment_events import appointment_events
 from app.tools.services_search import services_search
 
 AVAILABLE_TOOLS = [
@@ -20,6 +21,10 @@ AVAILABLE_TOOLS = [
     {
         "name": "appointment_availability",
         "description": "Get appointment availability slots for a tenant, date range and optional contact.",
+    },
+    {
+        "name": "appointment_events",
+        "description": "Get appointment/calendar events for a tenant and optional contact, date range or filters.",
     },
     {
         "name": "services_search",

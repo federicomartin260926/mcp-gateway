@@ -14,6 +14,7 @@ from app.settings import Settings, get_settings
 from app.tools import (
     AVAILABLE_TOOLS,
     appointment_availability,
+    appointment_events,
     contact_context,
     contact_context_mock,
     echo,
@@ -74,6 +75,7 @@ def build_mcp_server() -> FastMCP:
     mcp.tool()(contact_context_mock)
     mcp.tool()(contact_context)
     mcp.tool()(appointment_availability)
+    mcp.tool()(appointment_events)
     mcp.tool()(services_search)
     return mcp
 
