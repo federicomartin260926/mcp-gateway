@@ -12,6 +12,11 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
   - `contact_context_mock`
   - `contact_context`
   - `appointment_availability`
+  - `appointment_events`
+  - `appointment_confirm`
+  - `appointment_reschedule`
+  - `appointment_cancel`
+  - `appointment_booking_invitation`
   - `services_search`
 - Incluye la tool real `contact_context`, delegada a un webhook n8n configurable.
 - Incluye la tool real `appointment_availability`, delegada a un webhook n8n configurable para disponibilidad de citas.
@@ -36,9 +41,9 @@ La guía operativa completa está en [docs/n8n-postman-workflow.md](docs/n8n-pos
 
 - `contact_context` ya validado.
 - `appointment_availability` ya validado.
+- `appointment_events` ya validado.
 - `services_search` ya validado.
-- `appointment_confirm` ya validado en n8n.
-- `appointment_events`, `appointment_cancel` y `appointment_reschedule` preparados como workflows importables y colección Postman actualizada.
+- `appointment_confirm`, `appointment_reschedule`, `appointment_cancel` y `appointment_booking_invitation` expuestos como tools MCP.
 
 ## Endpoints
 
@@ -313,6 +318,30 @@ Si `APPOINTMENT_AVAILABILITY_WEBHOOK_URL` no está configurada, devuelve un payl
 ```
 
 Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `available: false`, `slots: []`, `message` útil y `error_code`.
+
+## Appointment actions
+
+Estas tools comparten el mismo patrón de integración con n8n:
+
+- `appointment_confirm`
+- `appointment_reschedule`
+- `appointment_cancel`
+- `appointment_booking_invitation`
+
+Variables de entorno:
+
+- `APPOINTMENT_CONFIRM_WEBHOOK_URL`
+- `APPOINTMENT_CONFIRM_TIMEOUT_SECONDS`
+- `APPOINTMENT_RESCHEDULE_WEBHOOK_URL`
+- `APPOINTMENT_RESCHEDULE_TIMEOUT_SECONDS`
+- `APPOINTMENT_CANCEL_WEBHOOK_URL`
+- `APPOINTMENT_CANCEL_TIMEOUT_SECONDS`
+- `APPOINTMENT_BOOKING_INVITATION_WEBHOOK_URL`
+- `APPOINTMENT_BOOKING_INVITATION_TIMEOUT_SECONDS`
+- `N8N_WEBHOOK_BEARER_TOKEN`
+
+Cada tool normaliza entradas vacías, aplica defaults razonables y devuelve un payload controlado con `ok`, `message` y `error_code` cuando corresponde.
+Si el webhook no está configurado, responde con `error_code: "not_configured"` sin llamar al upstream.
 
 ## Services search
 

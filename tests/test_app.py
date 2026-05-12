@@ -9,13 +9,21 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.settings import Settings
+from app.tools.appointment_booking_invitation import appointment_booking_invitation
+from app.tools.appointment_cancel import appointment_cancel
 from app.tools.appointment_availability import appointment_availability
+from app.tools.appointment_confirm import appointment_confirm
+from app.tools.appointment_reschedule import appointment_reschedule
 from app.tools.contact_context import contact_context
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
 from app.tools.services_search import services_search
 
+appointment_booking_invitation_module = importlib.import_module("app.tools.appointment_booking_invitation")
+appointment_cancel_module = importlib.import_module("app.tools.appointment_cancel")
 appointment_availability_module = importlib.import_module("app.tools.appointment_availability")
+appointment_confirm_module = importlib.import_module("app.tools.appointment_confirm")
+appointment_reschedule_module = importlib.import_module("app.tools.appointment_reschedule")
 contact_context_module = importlib.import_module("app.tools.contact_context")
 services_search_module = importlib.import_module("app.tools.services_search")
 
@@ -59,6 +67,11 @@ def test_info_endpoint_lists_tools():
     assert "contact_context_mock" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context" in [tool["name"] for tool in payload["available_tools"]]
     assert "appointment_availability" in [tool["name"] for tool in payload["available_tools"]]
+    assert "appointment_events" in [tool["name"] for tool in payload["available_tools"]]
+    assert "appointment_confirm" in [tool["name"] for tool in payload["available_tools"]]
+    assert "appointment_reschedule" in [tool["name"] for tool in payload["available_tools"]]
+    assert "appointment_cancel" in [tool["name"] for tool in payload["available_tools"]]
+    assert "appointment_booking_invitation" in [tool["name"] for tool in payload["available_tools"]]
     assert "services_search" in [tool["name"] for tool in payload["available_tools"]]
 
 
@@ -101,6 +114,11 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "contact_context_mock" in [tool["name"] for tool in tools]
         assert "contact_context" in [tool["name"] for tool in tools]
         assert "appointment_availability" in [tool["name"] for tool in tools]
+        assert "appointment_events" in [tool["name"] for tool in tools]
+        assert "appointment_confirm" in [tool["name"] for tool in tools]
+        assert "appointment_reschedule" in [tool["name"] for tool in tools]
+        assert "appointment_cancel" in [tool["name"] for tool in tools]
+        assert "appointment_booking_invitation" in [tool["name"] for tool in tools]
         assert "services_search" in [tool["name"] for tool in tools]
 
         call_response = client.post(
@@ -188,6 +206,137 @@ async def test_appointment_availability_without_webhook_returns_not_configured(m
     assert payload["ok"] is False
     assert payload["available"] is False
     assert payload["error_code"] == "not_configured"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("module", "function", "settings_key", "kwargs", "flag_key"),
+    [
+        (
+            appointment_confirm_module,
+            appointment_confirm,
+            "APPOINTMENT_CONFIRM_WEBHOOK_URL",
+            {},
+            "confirmed",
+        ),
+        (
+            appointment_reschedule_module,
+            appointment_reschedule,
+            "APPOINTMENT_RESCHEDULE_WEBHOOK_URL",
+            {},
+            "rescheduled",
+        ),
+        (
+            appointment_cancel_module,
+            appointment_cancel,
+            "APPOINTMENT_CANCEL_WEBHOOK_URL",
+            {},
+            "cancelled",
+        ),
+        (
+            appointment_booking_invitation_module,
+            appointment_booking_invitation,
+            "APPOINTMENT_BOOKING_INVITATION_WEBHOOK_URL",
+            {},
+            "created",
+        ),
+    ],
+)
+async def test_appointment_actions_without_webhook_return_not_configured(monkeypatch, module, function, settings_key, kwargs, flag_key):
+    monkeypatch.setattr(
+        module,
+        "get_settings",
+        lambda: Settings(**{settings_key: ""}),
+    )
+
+    payload = await function(**kwargs)
+
+    assert payload["ok"] is False
+    assert payload["error_code"] == "not_configured"
+    assert payload[flag_key] is False
+
+
+@pytest.mark.asyncio
+async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "confirmed": True,
+                "appointment_id": "appointment-1",
+                "message": "Appointment confirmed.",
+                "raw_summary": {"status": "confirmed"},
+            },
+        )
+
+    monkeypatch.setattr(
+        appointment_confirm_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_CONFIRM_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            APPOINTMENT_CONFIRM_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_confirm_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_confirm(
+        tenant_id=" 019dddb7-db7b-7cdd-963e-4294476ba1e7 ",
+        start_at=" 2026-05-20T10:00:00+02:00 ",
+        end_at=" 2026-05-20T10:30:00+02:00 ",
+        timezone=" Europe/Madrid ",
+        service_ref=" null ",
+        owner_ref=" 019c33aa-5f3d-729d-933e-3a8c28a2e66d ",
+        contact={
+            "phone": " +34611949358 ",
+            "email": " undefined ",
+            "name": " Lucia Garcia ",
+        },
+        title=" Llamada comercial ",
+        notes=" Prueba directa n8n appointment_confirm ",
+        conversation_id=" conv-1 ",
+        entrypoint_ref=" ref-1 ",
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer secret-token",
+    }
+    assert captured["json"] == {
+        "tool": "appointment_confirm",
+        "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+        "slot": {
+            "start": "2026-05-20T10:00:00+02:00",
+            "end": "2026-05-20T10:30:00+02:00",
+            "owner": {
+                "id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
+            },
+        },
+        "timezone": "Europe/Madrid",
+        "service_ref": None,
+        "contact": {
+            "phone": "+34611949358",
+            "email": None,
+            "name": "Lucia Garcia",
+        },
+        "title": "Llamada comercial",
+        "notes": "Prueba directa n8n appointment_confirm",
+        "conversation_id": "conv-1",
+        "entrypoint_ref": "ref-1",
+        "source": "mcp-gateway",
+    }
+    assert payload["ok"] is True
+    assert payload["confirmed"] is True
+    assert payload["appointment"]["id"] == "appointment-1"
+    assert payload["message"] == "Appointment confirmed."
 
 
 @pytest.mark.asyncio

@@ -13,8 +13,12 @@ from starlette.routing import Route
 from app.settings import Settings, get_settings
 from app.tools import (
     AVAILABLE_TOOLS,
+    appointment_booking_invitation,
+    appointment_cancel,
     appointment_availability,
     appointment_events,
+    appointment_confirm,
+    appointment_reschedule,
     contact_context,
     contact_context_mock,
     echo,
@@ -76,6 +80,10 @@ def build_mcp_server() -> FastMCP:
     mcp.tool()(contact_context)
     mcp.tool()(appointment_availability)
     mcp.tool()(appointment_events)
+    mcp.tool()(appointment_confirm)
+    mcp.tool()(appointment_reschedule)
+    mcp.tool()(appointment_cancel)
+    mcp.tool()(appointment_booking_invitation)
     mcp.tool()(services_search)
     return mcp
 
