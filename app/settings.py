@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8010, alias="PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
+    enable_debug_tools: bool = Field(default=False, alias="MCP_ENABLE_DEBUG_TOOLS")
     mcp_auth_token: str = Field(default="", alias="MCP_AUTH_TOKEN")
     mcp_allowed_hosts: str = Field(default="", alias="MCP_ALLOWED_HOSTS")
     contact_context_webhook_url: str = Field(default="", alias="CONTACT_CONTEXT_WEBHOOK_URL")

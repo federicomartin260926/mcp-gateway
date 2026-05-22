@@ -75,6 +75,16 @@ def test_info_endpoint_lists_tools():
     assert "services_search" in [tool["name"] for tool in payload["available_tools"]]
 
 
+def test_info_endpoint_lists_debug_tool_when_enabled():
+    client = TestClient(create_app(Settings(MCP_ENABLE_DEBUG_TOOLS=True)))
+
+    response = client.get("/info")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "debug_auth_context" in [tool["name"] for tool in payload["available_tools"]]
+
+
 def test_mcp_discovery_and_tool_call_work_via_streamable_http():
     settings = Settings(MCP_ALLOWED_HOSTS="localhost,127.0.0.1,*.trycloudflare.com")
     app = create_app(settings)
@@ -136,6 +146,63 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert call_response.status_code == 200
         call_payload = decode_sse_json(call_response)
         assert "hello" in call_payload["result"]["content"][0]["text"]
+
+
+def test_debug_auth_context_tool_reports_authorization_header():
+    settings = Settings(MCP_ENABLE_DEBUG_TOOLS=True)
+    app = create_app(settings)
+
+    with TestClient(app, base_url="https://acknowledged-quote-welding-riverside.trycloudflare.com") as client:
+        initialize_response = client.post(
+            "/mcp",
+            headers=MCP_HEADERS,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1.0"},
+                },
+            },
+            follow_redirects=False,
+        )
+        assert initialize_response.status_code == 200
+
+        tools_response = client.post(
+            "/mcp",
+            headers=MCP_HEADERS,
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            follow_redirects=False,
+        )
+        assert tools_response.status_code == 200
+        tools_payload = decode_sse_json(tools_response)
+        tools = tools_payload["result"]["tools"]
+        assert "debug_auth_context" in [tool["name"] for tool in tools]
+
+        call_response = client.post(
+            "/mcp",
+            headers={
+                **MCP_HEADERS,
+                "Authorization": "Bearer TEST_MCP_AUTH_TOKEN_123456",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "debug_auth_context", "arguments": {}},
+            },
+            follow_redirects=False,
+        )
+
+        assert call_response.status_code == 200
+        call_payload = decode_sse_json(call_response)
+        content = call_payload["result"]["content"]
+        text = content[0]["text"] if isinstance(content, list) and content and isinstance(content[0], dict) else ""
+        assert "has_authorization" in text
+        assert "authorization_scheme" in text
+        assert "token_preview" in text
 
 
 def test_mcp_auth_disabled_allows_access_to_mcp_route():

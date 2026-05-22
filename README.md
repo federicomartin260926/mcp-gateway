@@ -21,6 +21,7 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
 - Incluye la tool real `contact_context`, delegada a un webhook n8n configurable.
 - Incluye la tool real `appointment_availability`, delegada a un webhook n8n configurable para disponibilidad de citas.
 - Incluye la tool real `services_search`, delegada a un webhook n8n configurable para buscar productos y servicios del CRM.
+- Incluye una tool temporal de debug, `debug_auth_context`, habilitable con `MCP_ENABLE_DEBUG_TOOLS=true`, para validar de forma segura si llega `Authorization` desde OpenAI Responses API.
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
 
@@ -125,6 +126,14 @@ Valores recomendados:
 - producción: `mcp.tech-investments.net`
 
 Si `MCP_ALLOWED_HOSTS` está vacío, no se aplica validación adicional por la app.
+
+## Tool debug temporal
+
+Si `MCP_ENABLE_DEBUG_TOOLS=true`, el servidor registra la tool temporal `debug_auth_context`.
+
+- no expone el token completo
+- devuelve solo `has_authorization`, `authorization_scheme` y un `token_preview` enmascarado
+- sirve para validar si OpenAI Responses API entrega el header `Authorization` durante `tools/list` y `tools/call`
 
 ## Uso con Nginx Proxy Manager
 

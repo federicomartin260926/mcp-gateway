@@ -12,13 +12,14 @@ from starlette.routing import Route
 
 from app.settings import Settings, get_settings
 from app.tools import (
-    AVAILABLE_TOOLS,
     appointment_booking_invitation,
     appointment_cancel,
     appointment_availability,
     appointment_events,
     appointment_confirm,
     appointment_reschedule,
+    build_available_tools,
+    debug_auth_context,
     contact_context,
     contact_context_mock,
     echo,
@@ -46,6 +47,21 @@ def normalize_host(host: str | None) -> str:
     return host
 
 
+def _authorization_summary(authorization: str | None) -> tuple[bool, str | None]:
+    if authorization is None:
+        return False, None
+
+    normalized = authorization.strip()
+    if normalized == "":
+        return False, None
+
+    parts = normalized.split(None, 1)
+    if len(parts) >= 2 and parts[0].lower() in {"bearer", "basic", "digest"}:
+        return True, parts[0].capitalize()
+
+    return True, None
+
+
 def host_is_allowed(host: str | None, allowed_hosts: list[str]) -> bool:
     if not allowed_hosts:
         return True
@@ -66,7 +82,7 @@ def host_is_allowed(host: str | None, allowed_hosts: list[str]) -> bool:
     return False
 
 
-def build_mcp_server() -> FastMCP:
+def build_mcp_server(enable_debug_tools: bool = False) -> FastMCP:
     mcp = FastMCP(
         "mcp-gateway",
         stateless_http=True,
@@ -85,6 +101,8 @@ def build_mcp_server() -> FastMCP:
     mcp.tool()(appointment_cancel)
     mcp.tool()(appointment_booking_invitation)
     mcp.tool()(services_search)
+    if enable_debug_tools:
+        mcp.tool()(debug_auth_context)
     return mcp
 
 
@@ -92,7 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
     allowed_hosts = parse_allowed_hosts(app_settings.mcp_allowed_hosts)
     auth_token = app_settings.mcp_auth_token.strip()
-    mcp_server = build_mcp_server()
+    mcp_server = build_mcp_server(app_settings.enable_debug_tools)
+    available_tools = build_available_tools(app_settings.enable_debug_tools)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -132,12 +151,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return response
         finally:
             if mcp_path:
+                authorization = request.headers.get("Authorization", "")
+                has_authorization, authorization_scheme = _authorization_summary(authorization)
                 logger.info(
-                    "mcp_request method=%s path=%s status_code=%s user_agent=%s",
+                    "mcp_request method=%s path=%s status_code=%s user_agent=%s has_authorization=%s authorization_scheme=%s",
                     request.method,
                     request.url.path,
                     response.status_code if response is not None else 500,
                     request.headers.get("user-agent") or "-",
+                    has_authorization,
+                    authorization_scheme or "-",
                 )
 
     @app.get("/health")
@@ -150,7 +173,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "service": app_settings.service_name,
             "version": app_settings.service_version,
             "environment": app_settings.app_env,
-            "available_tools": AVAILABLE_TOOLS,
+            "available_tools": available_tools,
             "mcp_endpoint": "/mcp",
             "auth_required": app_settings.mcp_auth_token.strip() != "",
         }
