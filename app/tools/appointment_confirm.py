@@ -4,10 +4,11 @@ import logging
 from typing import Any
 
 import httpx
+from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.settings import get_settings
-from app.tools._appointment_common import coerce_bool, normalize_text, normalize_value, post_webhook
+from app.tools._appointment_common import coerce_bool, extract_request_authorization, normalize_text, normalize_value, post_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ async def appointment_confirm(
     notes: str | None = None,
     conversation_id: str | None = None,
     entrypoint_ref: str | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     try:
         payload = AppointmentConfirmInput(
@@ -139,6 +141,7 @@ async def appointment_confirm(
     webhook_url = normalize_text(settings.appointment_confirm_webhook_url)
     webhook_token = normalize_text(settings.n8n_webhook_bearer_token)
     timeout_seconds = settings.appointment_confirm_timeout_seconds
+    downstream_authorization = extract_request_authorization(ctx)
 
     normalized_tenant_id = normalize_text(payload.tenant_id)
     normalized_start_at = normalize_text(payload.start_at)
@@ -177,7 +180,14 @@ async def appointment_confirm(
     }
 
     try:
-        upstream_payload = await post_webhook(webhook_url, webhook_token, timeout_seconds, body)
+        upstream_payload = await post_webhook(
+            webhook_url,
+            webhook_token,
+            timeout_seconds,
+            body,
+            downstream_authorization=downstream_authorization,
+            tool_name="appointment_confirm",
+        )
     except httpx.TimeoutException:
         return _empty_payload("Appointment confirm request timed out.", "timeout")
     except httpx.HTTPStatusError:

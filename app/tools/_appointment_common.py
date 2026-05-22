@@ -1,9 +1,106 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
+from mcp.server.fastmcp import Context
 
+logger = logging.getLogger(__name__)
+
+
+def _mask_token(token: str | None) -> str | None:
+    if token is None:
+        return None
+
+    normalized = token.strip()
+    if normalized == "":
+        return None
+
+    if len(normalized) <= 10:
+        return f"{normalized[:4]}...{normalized[-2:]}"
+
+    return f"{normalized[:6]}...{normalized[-4:]}"
+
+
+def summarize_authorization(authorization: str | None) -> tuple[bool, str | None, str | None]:
+    if authorization is None:
+        return False, None, None
+
+    normalized = authorization.strip()
+    if normalized == "":
+        return False, None, None
+
+    parts = normalized.split(None, 1)
+    if len(parts) == 2:
+        scheme = parts[0].capitalize()
+        token = parts[1]
+    else:
+        scheme = None
+        token = normalized
+
+    return True, scheme, _mask_token(token)
+
+
+def extract_request_authorization(ctx: Context | None) -> str | None:
+    if ctx is None:
+        return None
+
+    request = getattr(getattr(ctx, "request_context", None), "request", None)
+    headers = getattr(request, "headers", None)
+    if headers is None:
+        return None
+
+    for header_name in ("Authorization", "authorization"):
+        try:
+            authorization = headers.get(header_name, "")
+        except Exception:
+            continue
+
+        if isinstance(authorization, str):
+            normalized = authorization.strip()
+            if normalized:
+                return normalized
+
+    return None
+
+
+def build_webhook_headers(token: str | None, downstream_authorization: str | None = None) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-N8N-Webhook-Token"] = f"Bearer {token}"
+    if downstream_authorization:
+        headers["X-Downstream-Authorization"] = downstream_authorization
+    return headers
+
+
+def log_webhook_auth(tool_name: str, downstream_authorization: str | None) -> None:
+    has_authorization, authorization_scheme, token_preview = summarize_authorization(downstream_authorization)
+    logger.info(
+        "n8n_webhook tool=%s downstream_authorization_present=%s downstream_authorization_scheme=%s downstream_authorization_preview=%s",
+        tool_name,
+        has_authorization,
+        authorization_scheme or "-",
+        token_preview or "-",
+    )
+
+
+async def post_webhook(
+    url: str,
+    token: str | None,
+    timeout_seconds: float,
+    body: dict[str, Any],
+    downstream_authorization: str | None = None,
+    tool_name: str = "n8n_webhook",
+) -> dict[str, Any]:
+    headers = build_webhook_headers(token, downstream_authorization)
+    log_webhook_auth(tool_name, downstream_authorization)
+
+    timeout = httpx.Timeout(timeout_seconds)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(url, json=body, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
 def normalize_text(value: str | None) -> str | None:
     if value is None:
@@ -55,15 +152,3 @@ def coerce_bool(value: Any, default: bool = False) -> bool:
         if normalized in {"false", "0", "no", "n", "off"}:
             return False
     return bool(value)
-
-
-async def post_webhook(url: str, token: str | None, timeout_seconds: float, body: dict[str, Any]) -> dict[str, Any]:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    timeout = httpx.Timeout(timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=body, headers=headers)
-        response.raise_for_status()
-        return response.json()

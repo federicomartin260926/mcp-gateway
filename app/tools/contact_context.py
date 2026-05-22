@@ -4,9 +4,11 @@ import logging
 from typing import Any
 
 import httpx
+from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict
 
 from app.settings import get_settings
+from app.tools._appointment_common import extract_request_authorization, post_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -181,16 +183,21 @@ def _normalize_success_payload(payload: Any) -> dict[str, Any]:
     return normalized
 
 
-async def _post_contact_context(url: str, token: str | None, timeout_seconds: float, body: dict[str, Any]) -> dict[str, Any]:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    timeout = httpx.Timeout(timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=body, headers=headers)
-        response.raise_for_status()
-        return response.json()
+async def _post_contact_context(
+    url: str,
+    token: str | None,
+    timeout_seconds: float,
+    body: dict[str, Any],
+    downstream_authorization: str | None = None,
+) -> dict[str, Any]:
+    return await post_webhook(
+        url,
+        token,
+        timeout_seconds,
+        body,
+        downstream_authorization=downstream_authorization,
+        tool_name="contact_context",
+    )
 
 
 async def contact_context(
@@ -199,6 +206,7 @@ async def contact_context(
     name: str | None = None,
     tenant_id: str | None = None,
     channel: str | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Get commercial context for a contact by phone or email."""
     payload = ContactContextInput(phone=phone, email=email, name=name, tenant_id=tenant_id, channel=channel)
@@ -206,6 +214,7 @@ async def contact_context(
     webhook_url = _normalize_text(settings.contact_context_webhook_url)
     webhook_token = _normalize_text(settings.n8n_webhook_bearer_token)
     timeout_seconds = settings.contact_context_timeout_seconds
+    downstream_authorization = extract_request_authorization(ctx)
 
     if webhook_url is None:
         return _empty_contact_payload("Contact context tool is not configured.", "not_configured")
@@ -235,7 +244,13 @@ async def contact_context(
     }
 
     try:
-        upstream_payload = await _post_contact_context(webhook_url, webhook_token, timeout_seconds, body)
+        upstream_payload = await _post_contact_context(
+            webhook_url,
+            webhook_token,
+            timeout_seconds,
+            body,
+            downstream_authorization=downstream_authorization,
+        )
     except httpx.TimeoutException:
         return _empty_contact_payload("Contact context request timed out.", "timeout")
     except httpx.HTTPStatusError:

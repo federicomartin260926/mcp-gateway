@@ -4,9 +4,11 @@ import logging
 from typing import Any
 
 import httpx
+from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict
 
 from app.settings import get_settings
+from app.tools._appointment_common import extract_request_authorization, post_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -123,16 +125,21 @@ def _normalize_success_payload(payload: Any, fallback_timezone: str) -> dict[str
     return normalized
 
 
-async def _post_appointment_availability(url: str, token: str | None, timeout_seconds: float, body: dict[str, Any]) -> dict[str, Any]:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    timeout = httpx.Timeout(timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=body, headers=headers)
-        response.raise_for_status()
-        return response.json()
+async def _post_appointment_availability(
+    url: str,
+    token: str | None,
+    timeout_seconds: float,
+    body: dict[str, Any],
+    downstream_authorization: str | None = None,
+) -> dict[str, Any]:
+    return await post_webhook(
+        url,
+        token,
+        timeout_seconds,
+        body,
+        downstream_authorization=downstream_authorization,
+        tool_name="appointment_availability",
+    )
 
 
 async def appointment_availability(
@@ -145,6 +152,7 @@ async def appointment_availability(
     service_ref: str | None = None,
     owner_ref: str | None = None,
     contact: AppointmentAvailabilityContactInput | dict[str, Any] | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Get appointment availability slots for a tenant, date range and optional contact."""
     payload = AppointmentAvailabilityInput(
@@ -163,6 +171,7 @@ async def appointment_availability(
     webhook_url = _normalize_text(settings.appointment_availability_webhook_url)
     webhook_token = _normalize_text(settings.n8n_webhook_bearer_token)
     timeout_seconds = settings.appointment_availability_timeout_seconds
+    downstream_authorization = extract_request_authorization(ctx)
 
     normalized_timezone = _normalize_text(payload.timezone) or "Europe/Madrid"
     normalized_date_from = _normalize_text(payload.date_from)
@@ -205,7 +214,13 @@ async def appointment_availability(
     }
 
     try:
-        upstream_payload = await _post_appointment_availability(webhook_url, webhook_token, timeout_seconds, body)
+        upstream_payload = await _post_appointment_availability(
+            webhook_url,
+            webhook_token,
+            timeout_seconds,
+            body,
+            downstream_authorization=downstream_authorization,
+        )
     except httpx.TimeoutException:
         return _empty_payload(normalized_timezone, "Appointment availability request timed out.", "timeout")
     except httpx.HTTPStatusError:

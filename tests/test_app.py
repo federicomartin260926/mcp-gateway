@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ from app.tools.contact_context import contact_context
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
 from app.tools.services_search import services_search
+from app.tools._appointment_common import summarize_authorization
 
 appointment_booking_invitation_module = importlib.import_module("app.tools.appointment_booking_invitation")
 appointment_cancel_module = importlib.import_module("app.tools.appointment_cancel")
@@ -26,6 +28,7 @@ appointment_confirm_module = importlib.import_module("app.tools.appointment_conf
 appointment_reschedule_module = importlib.import_module("app.tools.appointment_reschedule")
 contact_context_module = importlib.import_module("app.tools.contact_context")
 services_search_module = importlib.import_module("app.tools.services_search")
+appointment_common_module = importlib.import_module("app.tools._appointment_common")
 
 MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -43,6 +46,18 @@ def decode_sse_json(response):
         return json.loads(payload_lines[-1])
 
     return json.loads(response.text)
+
+
+def make_context(authorization: str | None = None):
+    headers = {}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+
+    return SimpleNamespace(
+        request_context=SimpleNamespace(
+            request=SimpleNamespace(headers=headers),
+        )
+    )
 
 
 def test_health_endpoint():
@@ -205,6 +220,16 @@ def test_debug_auth_context_tool_reports_authorization_header():
         assert "token_preview" in text
 
 
+def test_summarize_authorization_masks_token_preview():
+    has_authorization, authorization_scheme, token_preview = summarize_authorization(
+        "Bearer TEST_DOWNSTREAM_TOKEN_123456"
+    )
+
+    assert has_authorization is True
+    assert authorization_scheme == "Bearer"
+    assert token_preview == "TEST_D...3456"
+
+
 def test_mcp_auth_disabled_allows_access_to_mcp_route():
     with TestClient(create_app(Settings()), base_url="http://localhost") as client:
         response = client.post(
@@ -352,7 +377,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
             APPOINTMENT_CONFIRM_TIMEOUT_SECONDS=9,
         ),
     )
-    monkeypatch.setattr(appointment_confirm_module.httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
 
     payload = await appointment_confirm(
         tenant_id=" 019dddb7-db7b-7cdd-963e-4294476ba1e7 ",
@@ -370,12 +395,14 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
         notes=" Prueba directa n8n appointment_confirm ",
         conversation_id=" conv-1 ",
         entrypoint_ref=" ref-1 ",
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
     )
 
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "Authorization": "Bearer secret-token",
+        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
         "tool": "appointment_confirm",
@@ -471,7 +498,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
             APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS=9,
         ),
     )
-    monkeypatch.setattr(appointment_availability_module.httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
 
     payload = await appointment_availability(
         tenant_id="019dddb7-db7b-7cdd-963e-4294476ba1e7",
@@ -487,12 +514,14 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
             "email": "null",
             "name": " Lucia Garcia ",
         },
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
     )
 
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "Authorization": "Bearer secret-token",
+        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
         "tool": "appointment_availability",
@@ -574,7 +603,7 @@ async def test_contact_context_posts_expected_payload(monkeypatch):
             CONTACT_CONTEXT_TIMEOUT_SECONDS=7,
         ),
     )
-    monkeypatch.setattr(contact_context_module.httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
 
     payload = await contact_context(
         phone=" +34999999999 ",
@@ -582,12 +611,14 @@ async def test_contact_context_posts_expected_payload(monkeypatch):
         name="  Cliente Demo  ",
         tenant_id=" tenant-1 ",
         channel=" whatsapp ",
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
     )
 
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "Authorization": "Bearer secret-token",
+        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
         "tool": "contact_context",
@@ -725,7 +756,7 @@ async def test_services_search_posts_expected_payload(monkeypatch):
             SERVICES_SEARCH_TIMEOUT_SECONDS=11,
         ),
     )
-    monkeypatch.setattr(services_search_module.httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
 
     payload = await services_search(
         tenant_id=" 019dddb7-db7b-7cdd-963e-4294476ba1e7 ",
@@ -734,12 +765,14 @@ async def test_services_search_posts_expected_payload(monkeypatch):
         active=True,
         category=" null ",
         limit=30,
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
     )
 
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "Authorization": "Bearer secret-token",
+        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
         "tool": "services_search",

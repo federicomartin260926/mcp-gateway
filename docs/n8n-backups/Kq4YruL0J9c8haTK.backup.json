@@ -1,0 +1,2291 @@
+[
+  {
+    "updatedAt": "2026-05-14T11:49:29.626Z",
+    "createdAt": "2026-05-05T09:08:35.479Z",
+    "id": "Kq4YruL0J9c8haTK",
+    "name": "T&I",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "lead-tiai",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -64
+        ],
+        "id": "89112a5f-416c-467a-89ca-e6bb94f3d42b",
+        "name": "Webhook",
+        "webhookId": "6480a6ad-546b-45bf-86df-84529c81c323",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          48,
+          176
+        ],
+        "id": "d7f4bb43-6f70-4c04-b35e-5d35b81f2c13",
+        "name": "Respond to Webhook"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.body.message }}",
+                      "rightValue": "\\b(presupuesto|precio|coste|tarifa|cu[aá]nto)\\b",
+                      "operator": {
+                        "type": "string",
+                        "operation": "regex"
+                      },
+                      "id": "dddd8253-919d-4430-adda-7bcc9a7845d5"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "budget"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "id": "06ee3335-6f75-4f1a-abdd-ecf54ecf7416",
+                      "leftValue": "={{ $json.body.message }}",
+                      "rightValue": "\\b(demo|llamada|reuni[oó]n|agendar|calendar)\\b",
+                      "operator": {
+                        "type": "string",
+                        "operation": "regex"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "meeting"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "id": "e417d4a0-e563-436f-a3ef-d283f1837a4c",
+                      "leftValue": "={{ $json.body.message }}",
+                      "rightValue": "\\b(info|informaci[oó]n|c[oó]mo funciona|servicio)\\b",
+                      "operator": {
+                        "type": "string",
+                        "operation": "regex"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "info"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": 2
+          }
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          -944,
+          0
+        ],
+        "id": "424d8bc2-2a03-4ff4-9488-5b7004259792",
+        "name": "Switch"
+      },
+      {
+        "parameters": {
+          "jsCode": "const msg = ($input.first().json.body?.message || \"\").toLowerCase();\n\nlet score = 0;\n\nconst hasAny = (arr) => arr.some(w => msg.includes(w));\n\nif (hasAny([\"urgente\",\"esta semana\",\"mañana\",\"ya\",\"cuanto antes\"])) score += 3;\nif (hasAny([\"demo\",\"llamada\",\"reunión\",\"reunion\",\"agendar\",\"calendario\"])) score += 3;\nif (hasAny([\"presupuesto\",\"precio\",\"coste\",\"costo\",\"tarifa\",\"cuánto\",\"cuanto\"])) score += 2;\nif (hasAny([\"crm\",\"whatsapp\",\"zapier\",\"hubspot\",\"pipeline\",\"automatizar\",\"integración\",\"integracion\"])) score += 1;\nif (msg.length < 20) score -= 1;\n\nlet temperature = \"cold\";\nif (score >= 5) temperature = \"hot\";\nelse if (score >= 2) temperature = \"warm\";\n\nconst confidence = Math.max(0.4, Math.min(0.95, 0.5 + score * 0.08));\n\nreturn [{\n  ...$input.first().json,\n  source_kind: $input.first().json.source_kind ?? \"web\",\n  lead: {\n    name: $input.first().json.body?.name,\n    email: $input.first().json.body?.email,\n    message: $input.first().json.body?.message,\n  },\n  scoring: {\n    score,\n    temperature,\n    confidence: Number(confidence.toFixed(2)),\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1088,
+          16
+        ],
+        "id": "e27720e7-40f0-4bad-83f1-27e6613799ae",
+        "name": "Intent"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "e2a5fb7d-8282-481c-8658-c122dcac9999",
+                "name": "intent",
+                "value": "budget",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -752,
+          -176
+        ],
+        "id": "868b1720-fd1b-4600-a858-cba00109d03a",
+        "name": "Set Budget"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "8631f0b4-af75-42a0-b1cd-f37d9721def5",
+                "name": "intent",
+                "value": "meeting",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -752,
+          16
+        ],
+        "id": "d67b369b-0c68-4426-a736-9ac0f1a6d7ad",
+        "name": "Set Meeting"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "4d798d6c-6d66-4335-832f-db577dda3595",
+                "name": "intent",
+                "value": "info",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -752,
+          208
+        ],
+        "id": "c091c872-c815-4ada-834f-a1b6052a116e",
+        "name": "Set Info"
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "gpt-4o-mini",
+            "mode": "list",
+            "cachedResultName": "GPT-4O-MINI"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=Eres un asistente comercial profesional de Tech & Investments.\n\nUn posible cliente ha enviado el siguiente mensaje:\n\nNombre: {{$json.body.name}}\nEmail: {{$json.body.email}}\nMensaje: {{$json.body.message}}\n\nRedacta una respuesta clara, profesional y cercana.\nEl objetivo es continuar la conversación y proponer el siguiente paso lógico para poder preparar un presupuesto ajustado a sus necesidades.\n\nLos datos de contacto a mostrar al pie del mensaje son los siguientes:\nNombre: Federico Peña López\nCargo: Administrador\nTel: +34601208579\nWeb: https://tech-investments.net"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "maxTokens": 400
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2.1,
+        "position": [
+          -608,
+          -176
+        ],
+        "id": "93af953e-5690-4cd8-9fb5-493ac3b4f43d",
+        "name": "Message Budget",
+        "credentials": {
+          "openAiApi": {
+            "id": "vN4jbeQBtUVcmqmD",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "gpt-4o-mini",
+            "mode": "list",
+            "cachedResultName": "GPT-4O-MINI"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=Eres un asistente comercial profesional de Tech & Investments.\n\nUn posible cliente ha mostrado interés en una reunión, demo o llamada.\n\nDatos del cliente:\nNombre: {{$json.body.name}}\nEmail: {{$json.body.email}}\nMensaje: {{$json.body.message}}\n\nRedacta una respuesta clara, profesional y cercana.\nEl objetivo es proponer una breve reunión o videollamada para entender mejor sus necesidades, explicando de forma sencilla qué se puede tratar en esa llamada y facilitando el siguiente paso para agendarla.\n\nLos datos de contacto a mostrar al pie del mensaje son los siguientes:\nNombre: Federico Peña López\nCargo: Administrador\nTel: +34601208579\nWeb: https://tech-investments.net\n\nDevuelve SOLO un fragmento HTML (HTML fragment), NO un documento completo.\nPROHIBIDO incluir: <html>, <head>, <body>, <!doctype>, <meta>, <title>.\nOBLIGATORIO: envolver todo en un único <div>...</div>.\nUsa solo estas etiquetas: div,p,br,strong,em,ul,ol,li,a.\nNo uses markdown ni ```.\n\nEjemplo de salida válida:\n<div>\n  <p>Hola <strong>Marta</strong>,</p>\n  <p>...</p>\n</div>"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "maxTokens": 400
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2.1,
+        "position": [
+          -592,
+          16
+        ],
+        "id": "9e72d1b9-0cb8-4bbf-af0e-3a08d8777748",
+        "name": "Message Meeting",
+        "credentials": {
+          "openAiApi": {
+            "id": "vN4jbeQBtUVcmqmD",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "gpt-4o-mini",
+            "mode": "list",
+            "cachedResultName": "GPT-4O-MINI"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=Eres un asistente comercial profesional de Tech & Investments.\n\nUn posible cliente ha solicitado información general sobre los servicios.\n\nDatos del cliente:\nNombre: {{$json.body.name}}\nEmail: {{$json.body.email}}\nMensaje: {{$json.body.message}}\n\nRedacta una respuesta clara, profesional y cercana.\nEl objetivo es ofrecer una breve explicación general de cómo Tech & Investments ayuda a empresas con automatización y soluciones basadas en inteligencia artificial, e invitar a continuar la conversación si desea más detalles.\n\nLos datos de contacto a mostrar al pie del mensaje son los siguientes:\nNombre: Federico Peña López\nCargo: Administrador\nTel: +34601208579\nWeb: https://tech-investments.net\n\nDevuelve SOLO un fragmento HTML (HTML fragment), NO un documento completo.\nPROHIBIDO incluir: <html>, <head>, <body>, <!doctype>, <meta>, <title>.\nOBLIGATORIO: envolver todo en un único <div>...</div>.\nUsa solo estas etiquetas: div,p,br,strong,em,ul,ol,li,a.\nNo uses markdown ni ```.\n\nEjemplo de salida válida:\n<div>\n  <p>Hola <strong>Marta</strong>,</p>\n  <p>...</p>\n</div>"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "maxTokens": 400
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2.1,
+        "position": [
+          -592,
+          208
+        ],
+        "id": "7bd254eb-2907-409c-8191-23a35039fec6",
+        "name": "Message Info",
+        "credentials": {
+          "openAiApi": {
+            "id": "vN4jbeQBtUVcmqmD",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineByPosition",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -288,
+          -176
+        ],
+        "id": "8735e8fb-b235-4a5a-a469-e99eb2b675f8",
+        "name": "Merge Budget"
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineByPosition",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -288,
+          16
+        ],
+        "id": "fef43d95-15e6-413f-b43f-df3f426ca4be",
+        "name": "Merge Meeting"
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineByPosition",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          -288,
+          208
+        ],
+        "id": "17b81a94-2fb9-4a6d-a82f-995c5d9d4342",
+        "name": "Merge Info"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "2e8a0b74-d8b2-4c73-8957-7e86347b6df7",
+                "name": "ok",
+                "value": true,
+                "type": "boolean"
+              },
+              {
+                "id": "db31996b-c1d1-4810-ab88-047576b3b21c",
+                "name": "intent",
+                "value": "={{$json.intent}}",
+                "type": "string"
+              },
+              {
+                "id": "0dbd2cec-8a28-4017-bfa3-f015e24cc0dd",
+                "name": "temperature",
+                "value": "={{$json.scoring.temperature}}",
+                "type": "string"
+              },
+              {
+                "id": "eb3ed236-612e-4dfa-9087-84aff38a35cd",
+                "name": "confidence",
+                "value": "={{$json.scoring.confidence}}",
+                "type": "string"
+              },
+              {
+                "id": "63df0316-7d45-4043-9bf8-8c4ce99de0f9",
+                "name": "name",
+                "value": "={{$json.body.body.name}}",
+                "type": "string"
+              },
+              {
+                "id": "10d4da48-e2b0-4995-91dd-41cbbd47cdbb",
+                "name": "email",
+                "value": "={{$json.body.body.email}}",
+                "type": "string"
+              },
+              {
+                "id": "773e931a-3321-44fa-b7d5-4aa7c0298cea",
+                "name": "message",
+                "value": "={{$json.body.body.message}}",
+                "type": "string"
+              },
+              {
+                "id": "3aa8ffae-2828-4444-a648-e14e42537671",
+                "name": "reply",
+                "value": "={{ $json.output[0].content[0].text }}",
+                "type": "string"
+              },
+              {
+                "id": "0dfb12fb-9f01-4f53-9fb5-35c3d4d5ce90",
+                "name": "source_kind",
+                "value": "={{ $json.source_kind || \"web\" }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -128,
+          16
+        ],
+        "id": "d37c49bd-2924-426e-8990-0db6166f39f8",
+        "name": "Final Payload"
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first().json;\n\n// reply completo del modelo (HTML o texto)\nconst reply = (item.reply || \"\").trim();\n\n// intent detectado previamente (meeting | budget | info | etc.)\nconst intent = (item.intent || \"\").toLowerCase();\n\n// 1️⃣ Subject por intent (fallback)\nlet subjectByIntent = \"Tech & Investments\";\n\nswitch (intent) {\n  case \"meeting\":\n    subjectByIntent = \"Coordinemos una reunión sobre automatización\";\n    break;\n  case \"budget\":\n    subjectByIntent = \"Propuesta y presupuesto de automatización\";\n    break;\n  case \"info\":\n    subjectByIntent = \"Información sobre soluciones de automatización\";\n    break;\n}\n\n// 2️⃣ Subject final\nlet subject = subjectByIntent;\nlet body = reply;\n\n// 3️⃣ Si la IA devuelve \"Asunto: xxx\", tiene prioridad\nconst m = reply.match(/^Asunto:\\s*(.+)\\n+/i);\nif (m) {\n  subject = m[1].trim();\n  body = reply.replace(/^Asunto:\\s*.+\\n+/i, \"\").trim();\n}\n\n// 4️⃣ Destinatario\nconst to = item.email;\n\n// 5️⃣ Salida para Gmail\nreturn [{\n  json: {\n    email_to: to,\n    email_subject: subject,\n    email_body: body, // HTML generado por la IA\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          48,
+          -144
+        ],
+        "id": "5f30dfd7-1b17-4780-9690-a248f8e67819",
+        "name": "Prepare Email"
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first().json;\n\nfunction pick(...values) {\n  for (const value of values) {\n    if (value !== undefined && value !== null && value !== '') {\n      return value;\n    }\n  }\n  return null;\n}\n\nfunction buildUtmFields(sourceKind, payload = item) {\n  const serviceSlug = pick(payload.service_slug, payload.serviceSlug, payload.playbook, payload.recommended_service);\n  const isInboundWeb = sourceKind === 'web' || sourceKind === 'email' || sourceKind === 'whatsapp';\n  return {\n    serviceSlug,\n    utmSource: pick(payload.utmSource, payload.utm_source, isInboundWeb ? 'tech_investments' : 'lead_ops'),\n    utmMedium: pick(payload.utmMedium, payload.utm_medium, isInboundWeb ? sourceKind : 'automation'),\n    utmCampaign: pick(payload.utmCampaign, payload.utm_campaign, isInboundWeb ? 'tech_investments_inbound' : 'lead_ops_to_crm'),\n    utmTerm: pick(payload.utmTerm, payload.utm_term, serviceSlug),\n    utmContent: pick(payload.utmContent, payload.utm_content, sourceKind),\n  };\n}\n\nfunction buildWebOrEmailPayload(sourceKind) {\n  const iaNotes = {\n    origin: sourceKind,\n    name: item.name ?? null,\n    email: item.email ?? null,\n    message: item.message ?? null,\n    reply: item.reply ?? null,\n    intent: item.intent ?? null,\n    temperature: item.temperature ?? null,\n    confidence: item.confidence ?? null,\n    subject: item.subject ?? null,\n  };\n  const utm = buildUtmFields(sourceKind);\n\n  return {\n    email: item.email,\n    name: item.name,\n    company: item.company ?? null,\n    phone: item.phone ?? null,\n    website: item.website ?? null,\n    message: item.message ?? null,\n    notes: null,\n    iaNotes: JSON.stringify(iaNotes),\n    temperature: item.temperature ?? 'cold',\n    intent: item.intent ?? 'info',\n    source: sourceKind,\n    ...utm,\n    estimatedValue: null,\n    nextActionAt: null,\n    lostReason: null,\n    serviceIds: [],\n  };\n}\n\nfunction buildWhatsAppPayload(sourceKind) {\n  const inbound = item.body && typeof item.body === 'object' ? item.body : item;\n  const waId = pick(inbound.wa_id, inbound.waId, inbound.sender, inbound.from);\n  const contactName = pick(inbound.contact_name, inbound.contactName, inbound.name, inbound.profile?.name);\n  const messageText = pick(inbound.text, inbound.message, inbound.body, inbound.message_text);\n  const email = pick(\n    inbound.email,\n    inbound.contact?.email,\n    waId ? 'wa-' + String(waId).replace(/[^a-zA-Z0-9]/g, '') + '@whatsapp.local' : null,\n  );\n  const name = pick(contactName, waId, 'WhatsApp Lead');\n  const phone = pick(inbound.phone, inbound.sender, inbound.from, waId);\n  const iaNotes = {\n    origin: sourceKind,\n    waId,\n    sender: inbound.sender ?? null,\n    contactName,\n    messageId: inbound.message_id ?? inbound.messageId ?? null,\n    message: messageText ?? null,\n  };\n  const utm = buildUtmFields(sourceKind, inbound);\n\n  return {\n    email,\n    name,\n    company: null,\n    phone,\n    website: null,\n    message: messageText ?? null,\n    notes: null,\n    iaNotes: JSON.stringify(iaNotes),\n    temperature: 'warm',\n    intent: 'info',\n    source: sourceKind,\n    ...utm,\n    estimatedValue: null,\n    nextActionAt: null,\n    lostReason: null,\n    serviceIds: [],\n  };\n}\n\nfunction mergeCrmPayload(sourceKind, payload) {\n  const utm = buildUtmFields(sourceKind, { ...item, ...payload });\n  return {\n    ...payload,\n    ...utm,\n  };\n}\n\nconst sourceKindRaw = item.source_kind || item.body?.source_kind || item.source || item.body?.source || item.channel || item.body?.channel || item.provider || item.body?.provider || 'web';\nconst sourceKind = sourceKindRaw === 'whatsapp_cloud_api' ? 'whatsapp' : sourceKindRaw;\nconst inboundPayload = item.body?.crm_payload ?? item.crm_payload;\nif (inboundPayload && typeof inboundPayload === 'object') {\n  return [{ json: { ...item, crm_payload: mergeCrmPayload(sourceKind, inboundPayload) } }];\n}\n\nif (sourceKind === 'whatsapp') {\n  return [{\n    json: {\n      ...item,\n      crm_payload: buildWhatsAppPayload(sourceKind),\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...item,\n    crm_payload: buildWebOrEmailPayload(sourceKind),\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          48,
+          16
+        ],
+        "id": "7723c00f-d327-49c9-805c-d6043fb2a9cb",
+        "name": "Prepare CRM Payload",
+        "notes": "Normaliza el payload de webhook, email o lead-ops para enviarlo a CRM."
+      },
+      {
+        "parameters": {
+          "sendTo": "={{ $json.email_to }}",
+          "subject": "={{ $json.email_subject }}",
+          "message": "={{ $json.email_body }}",
+          "options": {
+            "bccList": "federicomartin2609@gmail.com",
+            "senderName": "Tech & Investments"
+          }
+        },
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          288,
+          -144
+        ],
+        "id": "cd404b7e-8f84-42d9-b3af-ab16febf477c",
+        "name": "Send Lead Email",
+        "webhookId": "5829807c-14e5-4460-8de3-fe3202a21fc5",
+        "credentials": {
+          "gmailOAuth2": {
+            "id": "GCVbTZQWtMSSfIse",
+            "name": "Gmail account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "lead-ops",
+          "authentication": "headerAuth",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -208
+        ],
+        "id": "f209aa06-2236-499a-b824-952015ade2b8",
+        "name": "Webhook-Lead-ops",
+        "webhookId": "0dbff9f8-1a22-425d-8147-777161761213",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://host.docker.internal:8082/api/leads",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.crm_payload }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "92285d5e-bc84-4fba-a184-4d596e2c74f7",
+        "name": "Create CRM Lead",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          288,
+          16
+        ],
+        "notes": "Envía el lead normalizado a CRM usando un bearer token de servicio configurado en n8n."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "07b59c20-bb23-49b4-9a37-77a1e378a8ed",
+                "leftValue": "={{ $json.isLead }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -1248,
+          96
+        ],
+        "id": "e084e554-42f3-42df-8abb-6e8c3b89f19c",
+        "name": "Is Lead?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.first().json;\n\nfunction fixMojibake(s = \"\") {\n  s = String(s);\n  if (!/(Ã.|Â.|â€™|â€œ|â€|�)/.test(s)) return s;\n\n  try {\n    const bytes = Uint8Array.from(s, c => c.charCodeAt(0) & 0xff);\n    const decoded = new TextDecoder(\"utf-8\", { fatal: false }).decode(bytes);\n    return decoded;\n  } catch (e) {\n    return s;\n  }\n}\n\nfunction decodeLatinEntities(s = \"\") {\n  return s\n    .replace(/&aacute;/gi, \"á\")\n    .replace(/&eacute;/gi, \"é\")\n    .replace(/&iacute;/gi, \"í\")\n    .replace(/&oacute;/gi, \"ó\")\n    .replace(/&uacute;/gi, \"ú\")\n    .replace(/&ntilde;/gi, \"ñ\")\n    .replace(/&uuml;/gi, \"ü\")\n    .replace(/&ccedil;/gi, \"ç\")\n    .replace(/&Aacute;/g, \"Á\")\n    .replace(/&Eacute;/g, \"É\")\n    .replace(/&Iacute;/g, \"Í\")\n    .replace(/&Oacute;/g, \"Ó\")\n    .replace(/&Uacute;/g, \"Ú\")\n    .replace(/&Ntilde;/g, \"Ñ\");\n}\n\nfunction htmlToText(s) {\n  return String(s)\n    .replace(/<br\\s*\\/?>/gi, \"\\n\")\n    .replace(/<\\/p>/gi, \"\\n\")\n    .replace(/<[^>]+>/g, \"\")\n    .replace(/&nbsp;/g, \" \")\n    .replace(/&amp;/g, \"&\")\n    .replace(/&lt;/g, \"<\")\n    .replace(/&gt;/g, \">\")\n    .replace(/&#39;/g, \"'\")\n    .replace(/&quot;/g, '\"');\n}\n\nconst subject = fixMojibake(item.subject || \"\");\nconst subjectLower = subject.toLowerCase();\nconst isLead =\n  subjectLower.includes(\"nuevo mensaje de contacto\") ||\n  subjectLower.includes(\"mensaje de contacto\") ||\n  subjectLower.includes(\"contacto\");\n\nif (!isLead) {\n  return [{ ...item, isLead: false, reason: \"Not lead\", source_kind: \"email\" }];\n}\n\nconst textHtml = decodeLatinEntities(fixMojibake(item.textHtml || \"\"));\nconst textPlain = decodeLatinEntities(fixMojibake(item.textPlain || \"\"));\nconst text = textHtml ? htmlToText(textHtml) : textPlain;\n\nfunction pick(re) {\n  const m = text.match(re);\n  return m ? m[1].trim() : \"\";\n}\n\nconst nombre = pick(/Nombre:\\s*(.+)/i);\nconst apellidos = pick(/Apellidos:\\s*(.+)/i);\nconst email = pick(/Email:\\s*([^\\s]+)/i);\nconst telefono = pick(/Tel[eé]fono:\\s*([0-9+\\s-]+)/i);\nconst mensaje = pick(/Mensaje:\\s*([\\s\\S]+)/i);\n\nconst fullName = [nombre, apellidos].filter(Boolean).join(\" \").trim() || nombre || \"Lead\";\n\nreturn [{\n  isLead: true,\n  source_kind: \"email\",\n  subject,\n  body: {\n    name: fullName,\n    email,\n    phone: telefono,\n    message: mensaje,\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1392,
+          96
+        ],
+        "id": "c2d18632-2d6c-4e40-8799-3f8051effbc4",
+        "name": "Normalize Email"
+      },
+      {
+        "parameters": {
+          "options": {
+            "forceReconnect": 30,
+            "trackLastMessageId": true
+          }
+        },
+        "type": "n8n-nodes-base.emailReadImap",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          96
+        ],
+        "id": "3eebc172-a242-4c48-883f-358a9d0e39c7",
+        "name": "Email Trigger (IMAP)",
+        "credentials": {
+          "imap": {
+            "id": "E25FWJjf2xuIanBW",
+            "name": "IMAP account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-contact-context",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -1072
+        ],
+        "id": "e9de3d1d-80ff-4227-98b0-123102268fd5",
+        "name": "SA Contact Context",
+        "webhookId": "15b60568-2ce5-45cc-bb46-28d5c302d214",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\n\nconst phone =\n  body.contact?.phone ||\n  body.contact?.wa_id ||\n  \"\";\n\nconst email =\n  body.contact?.email ||\n  \"\";\n\nreturn [\n  {\n    json: {\n      originalRequest: body,\n      crmQuery: {\n        phone,\n        email,\n      },\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1344,
+          -1072
+        ],
+        "id": "2ef46a1e-13b4-4a03-9ff4-b64ab7684ef4",
+        "name": "Prepare CRM Query"
+      },
+      {
+        "parameters": {
+          "url": "http://host.docker.internal:8082/api/integrations/contact-context",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "phone",
+                "value": "={{$json.crmQuery.phone}}"
+              },
+              {
+                "name": "email",
+                "value": "={{$json.crmQuery.email || \"\"}}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -1136,
+          -1072
+        ],
+        "id": "8e55918e-73fa-4f1f-bc29-c296a5476cfb",
+        "name": "HTTP Request",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json ?? {};\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        found: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo procesar la operación.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n        raw: input,\n      },\n    },\n  ];\n}\n\nconst contact = input.contact ?? null;\nconst found = Boolean(contact && contact.id);\n\nif (!found) {\n  return [\n    {\n      json: {\n        ok: true,\n        found: false,\n        source: 'crm',\n        contact: null,\n        summary: 'No se encontró contacto en CRM.',\n        recent_activity: [],\n        open_opportunities: [],\n        appointments: {\n          next: null,\n          past: [],\n        },\n        sales: [],\n        flags: {\n          needs_human: false,\n          do_not_contact: false,\n          existing_customer: false,\n          has_next_appointment: false,\n          has_open_opportunities: false,\n          has_sales: false,\n        },\n        raw: input,\n      },\n    },\n  ];\n}\n\nconst branch = input.branch ?? null;\nconst appointmentsInput = input.appointments ?? {};\nconst nextAppointment = appointmentsInput.next ?? null;\nconst pastAppointments = appointmentsInput.past ?? [];\nconst opportunities = input.opportunities ?? input.open_opportunities ?? [];\nconst salesInput = input.sales ?? [];\nconst salesArray = Array.isArray(salesInput) ? salesInput : [];\n\nlet summary =\n  input.summary ||\n  `${contact.name || 'Contacto'} encontrado como ${input.type ?? 'desconocido'}.`;\n\nif (nextAppointment) {\n  summary += ` Próxima cita: ${nextAppointment.title || 'cita'} el ${nextAppointment.startAt || nextAppointment.date || 'fecha pendiente'}.`;\n}\n\nif (Array.isArray(opportunities) && opportunities.length > 0) {\n  summary += ` Tiene ${opportunities.length} oportunidad(es) abiertas.`;\n}\n\nif (salesArray.length > 0) {\n  summary += ' Tiene ventas registradas.';\n}\n\nreturn [\n  {\n    json: {\n      ok: true,\n      found: true,\n      source: 'crm',\n      contact: {\n        external_id: contact.id ?? null,\n        type: input.type ?? 'unknown',\n        name: contact.name ?? null,\n        phone: contact.phone ?? contact.phoneE164 ?? null,\n        email: contact.email ?? null,\n        status: contact.status ?? null,\n        stage: contact.stage ?? input.stage ?? null,\n        owner: contact.ownerName ?? contact.owner ?? null,\n        branch: branch\n          ? {\n              external_id: branch.id ?? null,\n              name: branch.name ?? null,\n              code: branch.code ?? null,\n            }\n          : null,\n      },\n      summary,\n      recent_activity: input.recent_activity ?? input.recentActivity ?? [],\n      open_opportunities: opportunities,\n      appointments: {\n        next: nextAppointment,\n        past: pastAppointments,\n        last: appointmentsInput.last ?? null,\n        upcomingCount: appointmentsInput.upcomingCount ?? null,\n        pastCount: appointmentsInput.pastCount ?? null,\n      },\n      sales: salesInput,\n      flags: {\n        needs_human: Boolean(input.flags?.needs_human ?? input.flags?.needsHuman ?? false),\n        do_not_contact: Boolean(input.flags?.do_not_contact ?? input.flags?.doNotContact ?? false),\n        existing_customer: input.type === 'customer',\n        has_next_appointment: Boolean(nextAppointment),\n        has_open_opportunities: Array.isArray(opportunities) && opportunities.length > 0,\n        has_sales:\n          salesArray.length > 0 ||\n          Boolean(input.sales?.hasWonDeals) ||\n          Number(input.sales?.wonDealsCount ?? 0) > 0,\n      },\n      raw: input,\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -928,
+          -1072
+        ],
+        "id": "308aa8fb-4d96-40fc-bebd-cdbd367caebd",
+        "name": "Normalize SA Contact Context"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-appointment-availability",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -640
+        ],
+        "id": "e54e327f-c8cc-45f1-8185-fd44a9046fd6",
+        "name": "SA Appointment Availability",
+        "webhookId": "46168d7b-f871-44ef-a573-072323fcdce7",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst sourceQuery = body.query ?? body;\n\nfunction emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n\n  const trimmed = value.trim();\n  if (\n    !trimmed ||\n    trimmed.toLowerCase() === 'null' ||\n    trimmed.toLowerCase() === 'undefined'\n  ) {\n    return null;\n  }\n\n  return trimmed;\n}\n\nfunction numberOr(value, fallback) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : fallback;\n}\n\nfunction clamp(value, min, max) {\n  return Math.min(Math.max(value, min), max);\n}\n\nfunction toDateTimeStart(value) {\n  if (!value) return null;\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {\n    return `${value}T00:00:00+02:00`;\n  }\n  return value;\n}\n\nfunction toDateTimeEnd(value) {\n  if (!value) return null;\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {\n    return `${value}T23:59:59+02:00`;\n  }\n  return value;\n}\n\nconst tenantId = emptyToNull(\n  body.tenant_id ??\n  body.tenantId ??\n  sourceQuery.tenant_id ??\n  sourceQuery.tenantId\n);\n\nconst timezone = emptyToNull(\n  sourceQuery.timezone ??\n  body.timezone\n) || 'Europe/Madrid';\n\nconst durationMinutes = clamp(\n  numberOr(\n    sourceQuery.duration_minutes ??\n    sourceQuery.durationMinutes ??\n    body.duration_minutes ??\n    body.durationMinutes,\n    30\n  ),\n  5,\n  240\n);\n\nconst limit = clamp(\n  numberOr(sourceQuery.limit ?? body.limit, 10),\n  1,\n  50\n);\n\nconst dateFrom = emptyToNull(\n  sourceQuery.date_from ??\n  sourceQuery.dateFrom ??\n  sourceQuery.from ??\n  body.date_from ??\n  body.dateFrom ??\n  body.from\n);\n\nconst dateTo = emptyToNull(\n  sourceQuery.date_to ??\n  sourceQuery.dateTo ??\n  sourceQuery.to ??\n  body.date_to ??\n  body.dateTo ??\n  body.to\n);\n\nconst contact = body.contact ?? {};\n\nconst phone = emptyToNull(\n  contact.phone ??\n  sourceQuery.phone ??\n  body.phone\n);\n\nconst email = emptyToNull(\n  contact.email ??\n  sourceQuery.email ??\n  body.email\n);\n\nconst name = emptyToNull(\n  contact.name ??\n  sourceQuery.name ??\n  body.name\n);\n\nconst serviceRef = emptyToNull(\n  sourceQuery.service_ref ??\n  sourceQuery.serviceRef ??\n  sourceQuery.serviceId ??\n  sourceQuery.service_id ??\n  body.service_ref ??\n  body.serviceRef ??\n  body.serviceId ??\n  body.service_id\n);\n\nconst ownerRef = emptyToNull(\n  sourceQuery.owner_ref ??\n  sourceQuery.ownerRef ??\n  sourceQuery.ownerId ??\n  sourceQuery.owner_id ??\n  body.owner_ref ??\n  body.ownerRef ??\n  body.ownerId ??\n  body.owner_id\n);\n\nif (!dateFrom || !dateTo) {\n  return [\n    {\n      json: {\n        ok: false,\n        available: false,\n        timezone,\n        slots: [],\n        message: 'date_from and date_to are required.',\n        error_code: 'validation_error',\n      },\n    },\n  ];\n}\n\nconst query = {\n  from: toDateTimeStart(dateFrom),\n  to: toDateTimeEnd(dateTo),\n  durationMinutes,\n  timezone,\n  allowAlternativeOwners: true,\n  limit,\n};\n\nif (ownerRef) {\n  query.ownerId = ownerRef;\n}\n\nif (serviceRef) {\n  query.serviceId = serviceRef;\n}\n\nreturn [\n  {\n    json: {\n      ok: true,\n      tool: 'appointment_availability',\n      tenant_id: tenantId,\n      contact: {\n        phone,\n        email,\n        name,\n      },\n      crm_query: query,\n      source: emptyToNull(body.source) || 'mcp-gateway',\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1344,
+          -640
+        ],
+        "id": "5369a374-8281-4232-ab10-2dd364ac0259",
+        "name": "Prepare CRM Availability Query"
+      },
+      {
+        "parameters": {
+          "url": "http://host.docker.internal:8082/api/integrations/appointments/availability",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "from",
+                "value": "={{ $json.crm_query.from }}"
+              },
+              {
+                "name": "to",
+                "value": "={{ $json.crm_query.to }}"
+              },
+              {
+                "name": "durationMinutes",
+                "value": "={{ $json.crm_query.durationMinutes }}"
+              },
+              {
+                "name": "allowAlternativeOwners",
+                "value": "={{ $json.crm_query.allowAlternativeOwners }}"
+              },
+              {
+                "name": "limit",
+                "value": "={{ $json.crm_query.limit }}"
+              },
+              {
+                "name": "timezone",
+                "value": "={{ $json.crm_query.timezone }}"
+              },
+              {
+                "name": "ownerId",
+                "value": "={{ $json.crm_query.ownerId }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -832,
+          -640
+        ],
+        "id": "a48c73a8-6e72-43d9-a175-2bd461612a6f",
+        "name": "HTTP Request CRM Availability",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo procesar la operación.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  if (value === undefined || value === null) return [];\n  return [value];\n}\n\nfunction pick(obj, keys, fallback = null) {\n  for (const key of keys) {\n    if (obj && obj[key] !== undefined && obj[key] !== null) {\n      return obj[key];\n    }\n  }\n  return fallback;\n}\n\nconst limit = Number(input.limit ?? input.request?.limit ?? 6);\nconst timezone = input.timezone ?? input.data?.timezone ?? 'Europe/Madrid';\n\nconst owners = asArray(input.owners);\nconst ownersById = {};\nfor (const owner of owners) {\n  if (owner?.id) {\n    ownersById[owner.id] = {\n      id: owner.id,\n      name: owner.name ?? null,\n      email: owner.email ?? null,\n      preferred: owner.preferred ?? false,\n    };\n  }\n}\n\nlet rawSlots =\n  input.slots ??\n  input.availableSlots ??\n  input.items ??\n  input.data?.slots ??\n  input.data?.items ??\n  [];\n\n// Si CRM devuelve slotsByOwner, preferimos esa estructura porque trae ownerId.\nif ((!rawSlots || rawSlots.length === 0) && input.slotsByOwner && typeof input.slotsByOwner === 'object') {\n  rawSlots = [];\n\n  for (const [ownerId, ownerSlots] of Object.entries(input.slotsByOwner)) {\n    for (const slot of asArray(ownerSlots)) {\n      rawSlots.push({\n        ...slot,\n        ownerId: slot.ownerId ?? ownerId,\n      });\n    }\n  }\n}\n\n// Si ambos existen, enriquecemos slots planos usando ownerId si viene.\nconst slots = asArray(rawSlots)\n  .map((slot) => {\n    const start = pick(slot, ['start', 'startAt', 'from']);\n    const end = pick(slot, ['end', 'endAt', 'to']);\n\n    if (!start || !end) {\n      return null;\n    }\n\n    const ownerId = slot.ownerId ?? slot.owner_id ?? slot.owner?.id ?? null;\n    const ownerRaw = slot.owner ?? slot.user ?? slot.agent ?? ownersById[ownerId] ?? null;\n\n    return {\n      start,\n      end,\n      label: slot.label ?? null,\n      owner: ownerRaw\n        ? {\n            id: ownerRaw.id ?? ownerId ?? null,\n            name: ownerRaw.name ?? ownerRaw.fullName ?? null,\n            email: ownerRaw.email ?? null,\n            preferred: ownerRaw.preferred ?? false,\n          }\n        : ownerId\n          ? { id: ownerId, name: null, email: null, preferred: false }\n          : null,\n    };\n  })\n  .filter(Boolean)\n  .slice(0, limit);\n\nconst available = slots.length > 0;\n\nconst rawTotalSlots =\n  Number(input.totalSlots ?? input.slotsCount ?? 0) ||\n  asArray(input.slots).length ||\n  Object.values(input.slotsByOwner ?? {}).reduce((total, ownerSlots) => total + asArray(ownerSlots).length, 0);\n\nconst message = available\n  ? `Hay ${slots.length} hueco(s) disponible(s) de ${rawTotalSlots || slots.length} encontrados.`\n  : 'No se encontraron huecos disponibles para el rango solicitado.';\n\nreturn [\n  {\n    json: {\n      ok: true,\n      available,\n      timezone,\n      slots,\n      message,\n      raw_summary: {\n        mode: input.mode ?? null,\n        durationMinutes: input.durationMinutes ?? null,\n        ownersCount: owners.length,\n        totalSlots: rawTotalSlots,\n        returnedSlots: slots.length,\n        preferredOwnerId: input.preferredOwnerId ?? null,\n        preferredOwnerName: input.preferredOwnerName ?? null,\n      },\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -624,
+          -640
+        ],
+        "id": "da5e942f-6eb0-407e-80c1-438811bc5f73",
+        "name": "Normalize Appointment Availability"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          -416,
+          -640
+        ],
+        "id": "f6f09a6e-3d14-484d-8d00-bd566d7dacc0",
+        "name": "Respond to Webhook Availability"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-appointment-confirm",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -16,
+          -816
+        ],
+        "id": "e03d7c88-690d-41e0-9d8f-34909dcba172",
+        "name": "SA Appointment Confirm",
+        "webhookId": "46168d7b-f871-44ef-a573-072323fcdce7",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst query = body.query ?? {};\nconst slot = body.slot ?? query.slot ?? {};\nconst contact = body.contact ?? query.contact ?? {};\n\nfunction emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n\n  const trimmed = value.trim();\n  if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {\n    return null;\n  }\n\n  return trimmed;\n}\n\nfunction numberOrNull(value) {\n  if (value === undefined || value === null || value === '') return null;\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nconst tenantId = emptyToNull(body.tenant_id ?? body.tenantId);\n\nconst bookingToken = emptyToNull(\n  query.booking_token ??\n  query.bookingToken ??\n  query.token ??\n  body.booking_token ??\n  body.bookingToken ??\n  body.token\n);\n\nconst startAt = emptyToNull(\n  slot.start ??\n  slot.startAt ??\n  query.start ??\n  query.startAt ??\n  query.from ??\n  body.start ??\n  body.startAt ??\n  body.from\n);\n\nconst endAt = emptyToNull(\n  slot.end ??\n  slot.endAt ??\n  query.end ??\n  query.endAt ??\n  query.to ??\n  body.end ??\n  body.endAt ??\n  body.to\n);\n\nconst ownerId = emptyToNull(\n  slot.owner?.id ??\n  query.owner_id ??\n  query.ownerId ??\n  query.owner_ref ??\n  query.ownerRef ??\n  body.owner_id ??\n  body.ownerId ??\n  body.owner_ref ??\n  body.ownerRef\n);\n\nconst serviceId = emptyToNull(\n  query.service_id ??\n  query.serviceId ??\n  query.service_ref ??\n  query.serviceRef ??\n  body.service_id ??\n  body.serviceId ??\n  body.service_ref ??\n  body.serviceRef\n);\n\nconst timezone = emptyToNull(query.timezone ?? body.timezone) || 'Europe/Madrid';\n\nconst durationMinutes =\n  numberOrNull(query.duration_minutes ?? query.durationMinutes ?? body.duration_minutes ?? body.durationMinutes) ?? 30;\n\nconst contactName = emptyToNull(contact.name ?? body.name);\nconst contactPhone = emptyToNull(contact.phone ?? body.phone);\nconst contactEmail = emptyToNull(contact.email ?? body.email);\n\nif (!startAt) {\n  return [{\n    json: {\n      ok: false,\n      confirmed: false,\n      message: 'startAt/from is required.',\n      error_code: 'validation_error',\n    },\n  }];\n}\n\nif (!ownerId) {\n  return [{\n    json: {\n      ok: false,\n      confirmed: false,\n      message: 'ownerId/owner_id is required.',\n      error_code: 'validation_error',\n    },\n  }];\n}\n\nif (!contactPhone && !contactEmail) {\n  return [{\n    json: {\n      ok: false,\n      confirmed: false,\n      message: 'contact.phone or contact.email is required.',\n      error_code: 'validation_error',\n    },\n  }];\n}\n\nconst payload = {\n  bookingToken,\n  token: bookingToken,\n  contact: {\n    name: contactName,\n    phone: contactPhone,\n    email: contactEmail,\n  },\n  ownerId,\n  serviceId,\n  startAt,\n  endAt,\n  durationMinutes,\n  timezone,\n  title: emptyToNull(query.title ?? body.title) || 'Llamada comercial',\n  description: emptyToNull(query.description ?? body.description) || null,\n  notes: emptyToNull(query.notes ?? body.notes) || null,\n  confirmedBy: emptyToNull(body.source) || 'sales-agent',\n  metadata: {\n    source: emptyToNull(body.source) || 'mcp-gateway',\n    channel: emptyToNull(body.channel) || 'whatsapp',\n    externalTool: 'appointment_confirm',\n    tenantId,\n    confirmedBy: 'sales-agent',\n    conversationId: emptyToNull(body.conversation_id ?? body.conversationId),\n    entrypointRef: emptyToNull(body.entrypoint_ref ?? body.entrypointRef),\n  },\n};\n\nreturn [{\n  json: {\n    ok: true,\n    tool: 'appointment_confirm',\n    tenant_id: tenantId,\n    crm_payload: payload,\n    source: emptyToNull(body.source) || 'mcp-gateway',\n  },\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          208,
+          -816
+        ],
+        "id": "cbc700fe-02cb-497c-92ef-e2bb062361c8",
+        "name": "Prepare CRM Confirm Payload"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://host.docker.internal:8082/api/integrations/appointments/bookings/confirm",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "JSON",
+          "body": "={{ $json.crm_payload }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          416,
+          -816
+        ],
+        "id": "12696a2e-c268-4299-8719-a90ff45fe4b8",
+        "name": "HTTP Request CRM Confirm Booking",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo procesar la operación.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nfunction pick(obj, keys, fallback = null) {\n  for (const key of keys) {\n    if (obj && obj[key] !== undefined && obj[key] !== null) {\n      return obj[key];\n    }\n  }\n  return fallback;\n}\n\nconst appointment =\n  input.appointment ??\n  input.event ??\n  input.booking ??\n  input.data?.appointment ??\n  input.data?.event ??\n  input;\n\nconst confirmed =\n  input.confirmed ??\n  input.ok ??\n  Boolean(pick(appointment, ['id', 'appointment_id', 'eventId']));\n\nconst appointmentId = pick(appointment, ['id', 'appointment_id', 'eventId']);\nconst start = pick(appointment, ['start', 'startAt']);\nconst end = pick(appointment, ['end', 'endAt']);\nconst title = pick(appointment, ['title', 'name']);\n\nconst message =\n  input.message ??\n  (confirmed\n    ? 'La cita quedó confirmada correctamente.'\n    : 'No se pudo confirmar la cita.');\n\nreturn [{\n  json: {\n    ok: Boolean(confirmed),\n    confirmed: Boolean(confirmed),\n    appointment_id: appointmentId,\n    start,\n    end,\n    title,\n    message,\n    raw_summary: {\n      status: input.status ?? appointment.status ?? null,\n      source: 'crm',\n    },\n  },\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          624,
+          -816
+        ],
+        "id": "0c962b78-cee2-4981-89ac-bb9142a2b087",
+        "name": "Normalize Appointment Confirm"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          832,
+          -816
+        ],
+        "id": "d03f9191-2935-41d4-9c2c-f46928344667",
+        "name": "Respond to Webhook Confirm"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-appointment-booking-invitation",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -464
+        ],
+        "id": "59a35bf4-ba54-4b8c-bdc4-8d1a49278787",
+        "name": "SA Appointment Booking Invitation",
+        "webhookId": "32a7739d-d57a-4c85-9127-d7125b4cc6df",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "\nfunction emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n  const trimmed = value.trim();\n  if (!trimmed || trimmed.toLowerCase() === 'null') return null;\n  return trimmed;\n}\nfunction pick(...values) {\n  for (const value of values) {\n    const v = emptyToNull(value);\n    if (v !== null && v !== undefined) return v;\n  }\n  return null;\n}\n\nconst input = $input.first().json;\nconst body = input.body ?? input;\nconst contact = body.contact || {};\n\nconst durationMinutes = Number(body.duration_minutes || body.durationMinutes || 30);\nconst expiresInHours = Number(body.expires_in_hours || body.expiresInHours || 72);\n\nif (!durationMinutes || durationMinutes < 1) {\n  return [{ json: { ok: false, created: false, message: 'duration_minutes is required.', error_code: 'validation_error' } }];\n}\n\nconst payload = {\n  leadId: pick(body.lead_id, body.leadId),\n  customerId: pick(body.customer_id, body.customerId),\n  serviceId: pick(body.service_id, body.serviceId, body.service_ref),\n  ownerId: pick(body.owner_id, body.ownerId, body.owner_ref),\n  allowAlternativeOwners: body.allow_alternative_owners ?? body.allowAlternativeOwners ?? true,\n  durationMinutes,\n  expiresInHours,\n  title: pick(body.title) || 'Llamada comercial',\n  metadata: {\n    source: body.source || 'mcp-gateway',\n    channel: body.channel || 'whatsapp',\n    externalTool: 'appointment_booking_invitation',\n    tenantId: pick(body.tenant_id, body.tenantId),\n    conversationId: pick(body.conversation_id, body.conversationId),\n    entrypointRef: pick(body.entrypoint_ref, body.entrypointRef),\n    contact: {\n      name: pick(contact.name),\n      phone: pick(contact.phone),\n      email: pick(contact.email),\n    },\n  },\n};\n\nreturn [{ json: { ok: true, tool: 'appointment_booking_invitation', crm_payload: payload } }];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1344,
+          -464
+        ],
+        "id": "bd6f014b-ba3c-40b1-b0ac-c32bdd71b797",
+        "name": "Prepare CRM Booking Invitation Payload"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://host.docker.internal:8082/api/integrations/appointments/booking-invitations",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "JSON",
+          "body": "={{ $json.crm_payload }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -832,
+          -464
+        ],
+        "id": "1155e9de-a1d2-4eea-b408-df2b0e18a549",
+        "name": "HTTP Request CRM Booking Invitation",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo procesar la operación.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nconst invitation = input.invitation ?? input.bookingInvitation ?? input.data ?? input;\nconst id = invitation.id ?? invitation.invitationId ?? input.id ?? null;\nconst url = invitation.url ?? invitation.publicUrl ?? invitation.bookingUrl ?? invitation.link ?? null;\nreturn [{\n  json: {\n    ok: Boolean(input.ok ?? id ?? url),\n    created: Boolean(input.ok ?? id ?? url),\n    invitation_id: id,\n    booking_url: url,\n    expires_at: invitation.expiresAt ?? invitation.expires_at ?? null,\n    message: input.message ?? (url ? 'Invitación de reserva creada correctamente.' : 'Invitación de reserva creada.'),\n    raw_summary: { source: 'crm', status: input.status ?? invitation.status ?? null },\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -624,
+          -464
+        ],
+        "id": "2a97aff3-f1e5-48e9-acf4-772b4102508b",
+        "name": "Normalize Appointment Booking Invitation"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          -416,
+          -464
+        ],
+        "id": "7b40a463-ad95-46d0-8905-f49beaf88de3",
+        "name": "Respond to Webhook Booking Invitation"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-appointment-events",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -816
+        ],
+        "id": "d900a404-22ae-4f20-95ad-55ac97f8cf45",
+        "name": "SA Appointment Events",
+        "webhookId": "2e89ea52-00d7-4461-8c4f-2cecc99acde3",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n  const trimmed = value.trim();\n  if (!trimmed || trimmed.toLowerCase() === 'null') return null;\n  return trimmed;\n}\n\nfunction pick(...values) {\n  for (const value of values) {\n    const v = emptyToNull(value);\n    if (v !== null && v !== undefined) return v;\n  }\n  return null;\n}\n\nconst input = $input.first().json;\nconst body = input.body ?? input;\n\nconst contact = body.contact ?? {};\n\nconst from = pick(body.date_from, body.from);\nconst to = pick(body.date_to, body.to);\n\nif (!from || !to) {\n  return [{\n    json: {\n      ok: false,\n      events: [],\n      message: 'date_from/from and date_to/to are required.',\n      error_code: 'validation_error',\n    },\n  }];\n}\n\nfunction start(value) {\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(value) ? `${value}T00:00:00+02:00` : value;\n}\n\nfunction end(value) {\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(value) ? `${value}T23:59:59+02:00` : value;\n}\n\nreturn [{\n  json: {\n    ok: true,\n    tool: 'appointment_events',\n    tenant_id: pick(body.tenant_id),\n    contact: {\n      phone: pick(contact.phone, body.phone),\n      email: pick(contact.email, body.email),\n      name: pick(contact.name, body.name),\n    },\n    crm_query: {\n      from: start(from),\n      to: end(to),\n      status: pick(body.status),\n    },\n    limit: Number(body.limit ?? 10),\n    service_ref: pick(body.service_ref),\n    owner_ref: pick(body.owner_ref),\n  },\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1344,
+          -816
+        ],
+        "id": "1ade7c49-f055-4536-a675-7aa84e803bf4",
+        "name": "Prepare CRM Events Query"
+      },
+      {
+        "parameters": {
+          "url": "http://host.docker.internal:8082/api/integrations/appointments/events",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "customerId",
+                "value": "={{ $json.customer_id || '' }}"
+              },
+              {
+                "name": "leadId",
+                "value": "={{ $json.lead_id || '' }}"
+              },
+              {
+                "name": "from",
+                "value": "={{ $json.crm_query?.from || '' }}"
+              },
+              {
+                "name": "to",
+                "value": "={{ $json.crm_query?.to || '' }}"
+              },
+              {
+                "name": "status",
+                "value": "={{ $json.crm_query?.status || 'scheduled' }}"
+              },
+              {
+                "name": "limit",
+                "value": "={{ $json.limit || 5 }}"
+              },
+              {
+                "name": "ownerId",
+                "value": "={{ $json.owner_ref || '' }}"
+              },
+              {
+                "name": "serviceRef",
+                "value": "={{ $json.service_ref || '' }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -832,
+          -816
+        ],
+        "id": "6da90047-9f3e-4b23-b513-e5a61f2560a1",
+        "name": "HTTP Request CRM Events",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        found: false,\n        count: 0,\n        items: [],\n        events: [],\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo obtener el listado de citas.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nfunction arr(value) {\n  return Array.isArray(value) ? value : [];\n}\n\nfunction clampLimit(value, fallback = 10, min = 1, max = 20) {\n  const n = Number(value ?? fallback);\n  if (!Number.isFinite(n)) return fallback;\n  return Math.max(min, Math.min(max, Math.trunc(n)));\n}\n\nconst limit = clampLimit(input.limit ?? input.raw_summary?.limit ?? 10);\n\nconst rawEvents = arr(\n  input.events ??\n  input.items ??\n  input.data?.events ??\n  input.data?.items ??\n  input.result?.events ??\n  input.result?.items\n);\n\nconst events = rawEvents\n  .map((event) => ({\n    id: event.id ?? event.eventId ?? null,\n    title: event.title ?? event.name ?? null,\n    description: event.description ?? event.note ?? null,\n    start: event.start ?? event.startAt ?? null,\n    end: event.end ?? event.endAt ?? null,\n    timezone: event.timezone ?? null,\n    type: event.type ?? null,\n    status: event.status ?? null,\n    cancelled_at: event.cancelledAt ?? event.cancelled_at ?? null,\n\n    owner: event.owner\n      ? {\n          id: event.owner.id ?? null,\n          name: event.owner.name ?? null,\n          email: event.owner.email ?? null,\n        }\n      : event.ownerId\n        ? { id: event.ownerId, name: null, email: null }\n        : null,\n\n    service: event.service\n      ? {\n          id: event.service.id ?? null,\n          name: event.service.name ?? null,\n          slug: event.service.slug ?? null,\n          integration_key: event.service.integration_key ?? event.service.integrationKey ?? null,\n        }\n      : event.serviceId\n        ? { id: event.serviceId, name: null, slug: null, integration_key: null }\n        : null,\n\n    lead_id: event.leadId ?? event.lead_id ?? null,\n    customer_id: event.customerId ?? event.customer_id ?? null,\n    activity_id: event.activityId ?? event.activity_id ?? null,\n    metadata: event.metadata ?? {},\n  }))\n  .filter((event) => event.id || event.start)\n  .slice(0, limit);\n\nreturn [\n  {\n    json: {\n      ok: true,\n      found: events.length > 0,\n      count: events.length,\n      items: events,\n      events,\n      message: events.length\n        ? `Hay ${events.length} cita(s) en el rango solicitado.`\n        : 'No hay citas en el rango solicitado.',\n      raw_summary: {\n        totalEvents: rawEvents.length,\n        returnedEvents: events.length,\n        source: 'crm',\n      },\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -624,
+          -816
+        ],
+        "id": "1885e7af-c55d-475f-97cb-ac0c949129d4",
+        "name": "Normalize Appointment Events"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          -416,
+          -816
+        ],
+        "id": "e61b8b29-4099-4c2e-986b-28547c4494ec",
+        "name": "Respond to Webhook Events"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-appointment-cancel",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -16,
+          -464
+        ],
+        "id": "a38c6ca8-f167-4c44-b931-013bee973565",
+        "name": "SA Appointment Cancel",
+        "webhookId": "c50b6914-936c-495b-add3-a7a4a89aaec4",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n\n  const trimmed = value.trim();\n  if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {\n    return null;\n  }\n\n  return trimmed;\n}\n\nfunction pick(...values) {\n  for (const value of values) {\n    const v = emptyToNull(value);\n    if (v !== null && v !== undefined) return v;\n  }\n\n  return null;\n}\n\nconst input = $input.first().json;\nconst body = input.body ?? input;\nconst query = body.query ?? {};\n\nconst appointmentId = pick(\n  query.appointment_id,\n  query.appointmentId,\n  query.event_id,\n  query.eventId,\n  query.id,\n  body.appointment_id,\n  body.appointmentId,\n  body.event_id,\n  body.eventId,\n  body.id\n);\n\nif (!appointmentId) {\n  return [\n    {\n      json: {\n        ok: false,\n        cancelled: false,\n        message: 'appointment_id/event_id is required.',\n        error_code: 'validation_error',\n      },\n    },\n  ];\n}\n\nconst tenantId = pick(body.tenant_id, body.tenantId, query.tenant_id, query.tenantId);\nconst source = pick(body.source, query.source) || 'mcp-gateway';\nconst channel = pick(body.channel, query.channel) || 'whatsapp';\n\nconst payload = {\n  reason: pick(query.reason, body.reason) || 'Cancelado desde sales-agent',\n  cancelledBy: pick(query.cancelled_by, query.cancelledBy, body.cancelled_by, body.cancelledBy) || 'sales-agent',\n  metadata: {\n    source,\n    channel,\n    externalTool: 'appointment_cancel',\n    tenantId,\n    conversationId: pick(body.conversation_id, body.conversationId, query.conversation_id, query.conversationId),\n  },\n};\n\nreturn [\n  {\n    json: {\n      ok: true,\n      tool: 'appointment_cancel',\n      tenant_id: tenantId,\n      appointment_id: appointmentId,\n      crm_event_id: appointmentId,\n      crm_payload: payload,\n      source,\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          208,
+          -464
+        ],
+        "id": "d6b3304b-8aaa-482e-96cd-1545d7591bc0",
+        "name": "Prepare CRM Cancel Payload"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'http://host.docker.internal:8082/api/integrations/appointments/events/' + $json.appointment_id + '/cancel' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "JSON",
+          "body": "={{ $json.crm_payload }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          416,
+          -464
+        ],
+        "id": "eccc1808-ac22-461c-bda8-3d6663aecf36",
+        "name": "HTTP Request CRM Cancel",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo procesar la operación.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nconst event = input.event ?? input.appointment ?? input.data ?? input;\nconst id = event.id ?? input.id ?? null;\nconst cancelled = Boolean(input.cancelled ?? input.ok ?? event.status === 'cancelled');\nreturn [{\n  json: {\n    ok: cancelled,\n    cancelled,\n    appointment_id: id,\n    status: event.status ?? (cancelled ? 'cancelled' : null),\n    message: input.message ?? (cancelled ? 'La cita quedó cancelada correctamente.' : 'No se pudo cancelar la cita.'),\n    raw_summary: { source: 'crm' },\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          624,
+          -464
+        ],
+        "id": "e6f2fd86-7b7e-495b-9d1c-c43f9f90c4d9",
+        "name": "Normalize Appointment Cancel"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          832,
+          -464
+        ],
+        "id": "15d612c8-f3c3-43ee-b706-e74de6ce0963",
+        "name": "Respond to Webhook Cancel"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-appointment-reschedule",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -16,
+          -640
+        ],
+        "id": "9f9a12be-237b-43fd-95d4-c4760dc337a5",
+        "name": "SA Appointment Reschedule",
+        "webhookId": "7ea9d164-ed8b-4a9e-b6a3-069e5f8c187f",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n\n  const trimmed = value.trim();\n  if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {\n    return null;\n  }\n\n  return trimmed;\n}\n\nfunction pick(...values) {\n  for (const value of values) {\n    const v = emptyToNull(value);\n    if (v !== null && v !== undefined) return v;\n  }\n\n  return null;\n}\n\nconst input = $input.first().json;\nconst body = input.body ?? input;\nconst query = body.query ?? {};\nconst slot = body.slot ?? query.slot ?? {};\n\nconst appointmentId = pick(\n  query.appointment_id,\n  query.appointmentId,\n  query.event_id,\n  query.eventId,\n  query.id,\n  body.appointment_id,\n  body.appointmentId,\n  body.event_id,\n  body.eventId,\n  body.id\n);\n\nconst startAt = pick(\n  slot.start,\n  slot.startAt,\n  query.start,\n  query.startAt,\n  query.start_at,\n  query.from,\n  body.start,\n  body.startAt,\n  body.start_at,\n  body.from\n);\n\nconst endAt = pick(\n  slot.end,\n  slot.endAt,\n  query.end,\n  query.endAt,\n  query.end_at,\n  query.to,\n  body.end,\n  body.endAt,\n  body.end_at,\n  body.to\n);\n\nconst timezone = pick(query.timezone, body.timezone) || 'Europe/Madrid';\nconst tenantId = pick(body.tenant_id, body.tenantId, query.tenant_id, query.tenantId);\n\nif (!appointmentId) {\n  return [\n    {\n      json: {\n        ok: false,\n        rescheduled: false,\n        message: 'appointment_id/event_id is required.',\n        error_code: 'validation_error',\n      },\n    },\n  ];\n}\n\nif (!startAt) {\n  return [\n    {\n      json: {\n        ok: false,\n        rescheduled: false,\n        message: 'start/from is required.',\n        error_code: 'validation_error',\n      },\n    },\n  ];\n}\n\nif (!endAt) {\n  return [\n    {\n      json: {\n        ok: false,\n        rescheduled: false,\n        message: 'end/to is required.',\n        error_code: 'validation_error',\n      },\n    },\n  ];\n}\n\nconst payload = {\n  startAt,\n  endAt,\n  timezone,\n  metadata: {\n    source: pick(body.source, query.source) || 'mcp-gateway',\n    channel: pick(body.channel, query.channel) || 'whatsapp',\n    externalTool: 'appointment_reschedule',\n    tenantId,\n    conversationId: pick(body.conversation_id, body.conversationId, query.conversation_id, query.conversationId),\n    rescheduledBy: 'sales-agent',\n  },\n};\n\nconst title = pick(query.title, body.title);\nif (title) {\n  payload.title = title;\n}\n\nconst description = pick(query.description, query.notes, body.description, body.notes);\nif (description) {\n  payload.description = description;\n}\n\nreturn [\n  {\n    json: {\n      ok: true,\n      tool: 'appointment_reschedule',\n      tenant_id: tenantId,\n      appointment_id: appointmentId,\n      crm_event_id: appointmentId,\n      crm_payload: payload,\n      source: pick(body.source, query.source) || 'mcp-gateway',\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          208,
+          -640
+        ],
+        "id": "daa7f931-bc18-4417-bcb3-f43669559eb4",
+        "name": "Prepare CRM Reschedule Payload"
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "=http://host.docker.internal:8082/api/integrations/appointments/events/{{$json.appointment_id}}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "JSON",
+          "body": "={{ $json.crm_payload }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          416,
+          -640
+        ],
+        "id": "72c8df8b-6678-44f5-b1a2-2a253f4e8583",
+        "name": "HTTP Request CRM Reschedule",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo procesar la operación.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nconst event = input.event ?? input.appointment ?? input.data ?? input;\nconst id = event.id ?? input.id ?? null;\nconst rescheduled = Boolean(input.rescheduled ?? input.ok ?? id);\nreturn [{\n  json: {\n    ok: rescheduled,\n    rescheduled,\n    appointment_id: id,\n    start: event.start ?? event.startAt ?? null,\n    end: event.end ?? event.endAt ?? null,\n    status: event.status ?? null,\n    message: input.message ?? (rescheduled ? 'La cita quedó reprogramada correctamente.' : 'No se pudo reprogramar la cita.'),\n    raw_summary: { source: 'crm' },\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          624,
+          -640
+        ],
+        "id": "2b7c5dd9-89ed-4cdf-b716-2ccfc13e5836",
+        "name": "Normalize Appointment Reschedule"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          832,
+          -640
+        ],
+        "id": "694594e5-31f3-4edc-86ba-072b392a8506",
+        "name": "Respond to Webhook Reschedule"
+      },
+      {
+        "parameters": {
+          "content": "## Calendar \nCalendar events"
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -2000,
+          -816
+        ],
+        "id": "4218bcb1-a48a-458c-ac47-e4981ecdaaf4",
+        "name": "Sticky Note"
+      },
+      {
+        "parameters": {
+          "content": "## Contact Context \nGeneral context of a contact (lear or client)"
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -2000,
+          -1072
+        ],
+        "id": "0a62cc6f-b5e7-4d18-8c0d-74eb55184656",
+        "name": "Sticky Note1"
+      },
+      {
+        "parameters": {
+          "content": "## Leads incomes \nManage leads from:\n- Lead-ops tool\n- Web T&I\n- T&I email"
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -2000,
+          -208
+        ],
+        "id": "65d96103-31e2-4866-bf67-d317402fbaa1",
+        "name": "Sticky Note2"
+      },
+      {
+        "parameters": {
+          "content": "## Services \nServices search"
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -2000,
+          -1328
+        ],
+        "id": "fddc63b7-043c-4dad-a4a3-e9bf363c2140",
+        "name": "Sticky Note3"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "sa-services-search",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1552,
+          -1328
+        ],
+        "id": "cb075eb7-b6d6-480f-902b-996b4e3e9631",
+        "name": "Webhook SA Services Search",
+        "webhookId": "15b60568-2ce5-45cc-bb46-28d5c302d214",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "1oMYaePJXXZkhqHw",
+            "name": "Lead T&I Webhook Bearer"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body ?? $input.first().json;\nconst rawQuery = body.query ?? {};\n\nfunction emptyToNull(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value !== 'string') return value;\n\n  const trimmed = value.trim();\n  if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {\n    return null;\n  }\n\n  return trimmed;\n}\n\nfunction parseBool(value, fallback = null) {\n  if (value === undefined || value === null || value === '') return fallback;\n  if (typeof value === 'boolean') return value;\n\n  if (typeof value === 'string') {\n    const normalized = value.trim().toLowerCase();\n    if (['true', '1', 'yes', 'si', 'sí'].includes(normalized)) return true;\n    if (['false', '0', 'no'].includes(normalized)) return false;\n  }\n\n  return fallback;\n}\n\nfunction parseLimit(value, fallback = 10) {\n  const parsed = Number.parseInt(value, 10);\n  if (Number.isNaN(parsed)) return fallback;\n  return Math.min(Math.max(parsed, 1), 30);\n}\n\nconst query = {\n  q: emptyToNull(\n    typeof rawQuery === 'string'\n      ? rawQuery\n      : rawQuery.q ?? body.q ?? body.search\n  ),\n  bookable: parseBool(rawQuery.bookable ?? body.bookable, null),\n  active: parseBool(rawQuery.active ?? body.active, true),\n  category: emptyToNull(rawQuery.category ?? rawQuery.category_slug ?? body.category ?? body.category_slug),\n  limit: parseLimit(rawQuery.limit ?? body.limit, 10),\n};\n\nreturn [\n  {\n    json: {\n      ok: true,\n      tool: body.tool ?? 'services_search',\n      tenant_id: emptyToNull(body.tenant_id),\n      crm_query: query,\n      source: emptyToNull(body.source) ?? 'mcp-gateway',\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1344,
+          -1328
+        ],
+        "id": "2233fee4-6baf-4a2f-9532-edf5a2a0a6f3",
+        "name": "Prepare CRM Services Query"
+      },
+      {
+        "parameters": {
+          "url": "http://host.docker.internal:8082/api/integrations/services",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "q",
+                "value": "={{ $json.crm_query.q }}"
+              },
+              {
+                "name": "bookable",
+                "value": "={{ $json.crm_query.bookable }}"
+              },
+              {
+                "name": "active",
+                "value": "={{ $json.crm_query.active }}"
+              },
+              {
+                "name": "category",
+                "value": "={{ $json.crm_query.category }}"
+              },
+              {
+                "name": "limit",
+                "value": "={{ $json.crm_query.limit }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -1136,
+          -1328
+        ],
+        "id": "40afe0bf-c1a8-420f-853b-4c4322f7eb6a",
+        "name": "HTTP Request CRM Services",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\n\nconst hasHttpError =\n  input.error ||\n  input.statusCode >= 400 ||\n  input.code === 'ERR_BAD_REQUEST' ||\n  input.code === 'ERR_BAD_RESPONSE' ||\n  input.message?.toLowerCase?.().includes('request failed');\n\nif (hasHttpError) {\n  return [\n    {\n      json: {\n        ok: false,\n        error_code: 'crm_error',\n        message:\n          input.response?.body?.message ||\n          input.response?.data?.message ||\n          input.message ||\n          'No se pudo consultar el catálogo de productos/servicios.',\n        raw_summary: {\n          source: 'crm',\n          status: input.statusCode ?? input.response?.status ?? null,\n          code: input.code ?? null,\n        },\n      },\n    },\n  ];\n}\n\nconst items = Array.isArray(input.items) ? input.items : [];\nconst categories = Array.isArray(input.categories) ? input.categories : [];\n\nconst normalizedItems = items.map((item) => ({\n  id: item.id ?? null,\n  name: item.name ?? null,\n  slug: item.slug ?? null,\n  integration_key: item.integration_key ?? item.integrationKey ?? item.slug ?? null,\n  description: item.description ?? null,\n  base_price_cents: item.base_price_cents ?? item.basePriceCents ?? null,\n  currency: item.currency ?? null,\n  category: item.category\n    ? {\n        id: item.category.id ?? null,\n        name: item.category.name ?? null,\n        slug: item.category.slug ?? null,\n      }\n    : null,\n  is_bookable: Boolean(item.is_bookable ?? item.isBookable ?? false),\n  is_billable: Boolean(item.is_billable ?? item.isBillable ?? false),\n  duration_minutes: item.duration_minutes ?? item.durationMinutes ?? null,\n  buffer_before_minutes: item.buffer_before_minutes ?? item.bufferBeforeMinutes ?? 0,\n  buffer_after_minutes: item.buffer_after_minutes ?? item.bufferAfterMinutes ?? 0,\n  active: item.active ?? true,\n}));\n\nconst normalizedCategories = categories.map((category) => ({\n  id: category.id ?? null,\n  name: category.name ?? null,\n  slug: category.slug ?? null,\n}));\n\nreturn [\n  {\n    json: {\n      ok: true,\n      found: normalizedItems.length > 0,\n      count: normalizedItems.length,\n      items: normalizedItems,\n      categories: normalizedCategories,\n      message:\n        normalizedItems.length > 0\n          ? `Se encontraron ${normalizedItems.length} producto(s)/servicio(s).`\n          : 'No se encontraron productos/servicios para la búsqueda.',\n      raw_summary: {\n        source: 'crm',\n        returnedItems: normalizedItems.length,\n        returnedCategories: normalizedCategories.length,\n      },\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -928,
+          -1328
+        ],
+        "id": "f87ab255-2256-4db0-a0aa-afb9f2f926b6",
+        "name": "Normalize Services Search"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          -720,
+          -1072
+        ],
+        "id": "60ef14ad-0573-48aa-b31f-e0da4a317a6f",
+        "name": "Respond to Webhook Contact Context"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          -720,
+          -1328
+        ],
+        "id": "3bf819f5-6f9f-4ed8-897d-f161198a3047",
+        "name": "Respond to Webhook Services"
+      },
+      {
+        "parameters": {
+          "url": "http://host.docker.internal:8082/api/integrations/contact-context",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "phone",
+                "value": "={{ $json.contact?.phone || '' }}"
+              },
+              {
+                "name": "email",
+                "value": "={{ $json.contact?.email || '' }}"
+              },
+              {
+                "name": "tenant_id",
+                "value": "={{ $json.tenant_id || '' }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer crm_live_cc52b02bc53c29699b368ee6eceaf4dec13e8512c7bf29e2e77841e26031988f"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -1168,
+          -816
+        ],
+        "id": "49e912f8-52cf-4762-99a0-d31620dfe46f",
+        "name": "HTTP Request CRM Contact Context"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $('Prepare CRM Events Query').first().json;\nconst ctx = $input.first().json;\n\nreturn [\n  {\n    json: {\n      ...input,\n      contact_context: ctx,\n      customer_id: ctx.customer?.id || ctx.contact?.id || null,\n      lead_id: ctx.lead?.id || null,\n      contact_found: !!ctx.type,\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -992,
+          -816
+        ],
+        "id": "bb7dbe70-010d-41da-92c2-8de0aaee0219",
+        "name": "Normalize Contact Context"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Intent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch": {
+        "main": [
+          [
+            {
+              "node": "Set Budget",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Set Meeting",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Set Info",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Intent": {
+        "main": [
+          [
+            {
+              "node": "Switch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Set Budget": {
+        "main": [
+          [
+            {
+              "node": "Message Budget",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge Budget",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Set Meeting": {
+        "main": [
+          [
+            {
+              "node": "Message Meeting",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge Meeting",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Set Info": {
+        "main": [
+          [
+            {
+              "node": "Message Info",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge Info",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Message Budget": {
+        "main": [
+          [
+            {
+              "node": "Merge Budget",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Message Meeting": {
+        "main": [
+          [
+            {
+              "node": "Merge Meeting",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Message Info": {
+        "main": [
+          [
+            {
+              "node": "Merge Info",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Budget": {
+        "main": [
+          [
+            {
+              "node": "Final Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Meeting": {
+        "main": [
+          [
+            {
+              "node": "Final Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Info": {
+        "main": [
+          [
+            {
+              "node": "Final Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Final Payload": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Payload",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Prepare Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Email": {
+        "main": [
+          [
+            {
+              "node": "Send Lead Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Payload": {
+        "main": [
+          [
+            {
+              "node": "Create CRM Lead",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create CRM Lead": {
+        "main": [
+          []
+        ]
+      },
+      "Webhook-Lead-ops": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Lead?": {
+        "main": [
+          [
+            {
+              "node": "Intent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Email": {
+        "main": [
+          [
+            {
+              "node": "Is Lead?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Email Trigger (IMAP)": {
+        "main": [
+          [
+            {
+              "node": "Normalize Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Contact Context": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Query",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Query": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request": {
+        "main": [
+          [
+            {
+              "node": "Normalize SA Contact Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize SA Contact Context": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Contact Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Appointment Availability": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Availability Query",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Availability Query": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Availability",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Availability": {
+        "main": [
+          [
+            {
+              "node": "Normalize Appointment Availability",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Appointment Availability": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Availability",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Appointment Confirm": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Confirm Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Confirm Payload": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Confirm Booking",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Confirm Booking": {
+        "main": [
+          [
+            {
+              "node": "Normalize Appointment Confirm",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Appointment Confirm": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Confirm",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Appointment Booking Invitation": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Booking Invitation Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Booking Invitation Payload": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Booking Invitation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Booking Invitation": {
+        "main": [
+          [
+            {
+              "node": "Normalize Appointment Booking Invitation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Appointment Booking Invitation": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Booking Invitation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Appointment Events": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Events Query",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Events Query": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Contact Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Events": {
+        "main": [
+          [
+            {
+              "node": "Normalize Appointment Events",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Appointment Events": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Events",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Appointment Cancel": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Cancel Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Cancel Payload": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Cancel",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Cancel": {
+        "main": [
+          [
+            {
+              "node": "Normalize Appointment Cancel",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Appointment Cancel": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Cancel",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SA Appointment Reschedule": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Reschedule Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Reschedule Payload": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Reschedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Reschedule": {
+        "main": [
+          [
+            {
+              "node": "Normalize Appointment Reschedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Appointment Reschedule": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Reschedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook SA Services Search": {
+        "main": [
+          [
+            {
+              "node": "Prepare CRM Services Query",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare CRM Services Query": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Services",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Services": {
+        "main": [
+          [
+            {
+              "node": "Normalize Services Search",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Services Search": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook Services",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request CRM Contact Context": {
+        "main": [
+          [
+            {
+              "node": "Normalize Contact Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Contact Context": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request CRM Events",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": false,
+      "binaryMode": "separate"
+    },
+    "staticData": {
+      "node:Email Trigger (IMAP)": {
+        "lastMessageUid": 3231
+      }
+    },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "8f092eb4-8051-4029-8209-4e30d5bb1010",
+    "activeVersionId": "8f092eb4-8051-4029-8209-4e30d5bb1010",
+    "versionCounter": 580,
+    "triggerCount": 11,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-05-05T09:08:35.479Z",
+        "createdAt": "2026-05-05T09:08:35.479Z",
+        "role": "workflow:owner",
+        "workflowId": "Kq4YruL0J9c8haTK",
+        "projectId": "33Ln3vKlPxJxFpXz",
+        "project": {
+          "updatedAt": "2026-04-23T09:07:30.845Z",
+          "createdAt": "2026-04-23T08:30:57.302Z",
+          "id": "33Ln3vKlPxJxFpXz",
+          "name": "Federico Peña <federicomartin2609@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "df11eeda-5d87-4ccc-9ade-dcd0c39e6f7b"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Version 8f092eb4",
+      "description": ""
+    }
+  }
+]

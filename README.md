@@ -24,6 +24,7 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
 - Incluye una tool temporal de debug, `debug_auth_context`, habilitable con `MCP_ENABLE_DEBUG_TOOLS=true`, para validar de forma segura si llega `Authorization` desde OpenAI Responses API.
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
+- Reenvía `Authorization` recibido por MCP hacia n8n como `X-Downstream-Authorization` para no mezclar la auth técnica del webhook con la auth downstream hacia CRM.
 
 ## Flujo de trabajo con n8n y Postman
 
@@ -45,6 +46,14 @@ La guía operativa completa está en [docs/n8n-postman-workflow.md](docs/n8n-pos
 - `appointment_events` ya validado.
 - `services_search` ya validado.
 - `appointment_confirm`, `appointment_reschedule`, `appointment_cancel` y `appointment_booking_invitation` expuestos como tools MCP.
+
+## Downstream authorization
+
+Cuando OpenAI Responses API entrega `Authorization` al endpoint MCP, `mcp-gateway` lo reenvía a n8n como `X-Downstream-Authorization`.
+
+n8n toma ese header y lo usa como `Authorization` hacia CRM cuando está presente. Si no llega, los workflows conservan el token CRM por defecto que ya tenían configurado.
+
+Los exports de respaldo del workflow n8n activo se guardan en [docs/n8n-backups/](docs/n8n-backups/).
 
 ## Endpoints
 
@@ -182,7 +191,8 @@ Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un paylo
 
 - exige al menos `phone` o `email` cuando hay webhook configurado
 - normaliza strings vacíos, espacios y valores tipo `"null"` a `null`
-- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- envía `X-N8N-Webhook-Token: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `CONTACT_CONTEXT_TIMEOUT_SECONDS` con valor por defecto `5`
 
 ### Payload enviado a n8n
@@ -268,7 +278,8 @@ Si `APPOINTMENT_AVAILABILITY_WEBHOOK_URL` no está configurada, devuelve un payl
 - `timezone` usa `Europe/Madrid` por defecto
 - `duration_minutes` se limita entre `5` y `240`
 - `limit` se limita entre `1` y `10`
-- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- envía `X-N8N-Webhook-Token: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS` con valor por defecto `8`
 
 ### Payload enviado a n8n
@@ -380,7 +391,8 @@ Si `SERVICES_SEARCH_WEBHOOK_URL` no está configurada, devuelve un payload norma
 
 - normaliza strings vacíos, `"null"` y `"undefined"` a `null`
 - limita `limit` entre `1` y `30`
-- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- envía `X-N8N-Webhook-Token: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `SERVICES_SEARCH_TIMEOUT_SECONDS` con valor por defecto `8`
 
 ### Payload enviado a n8n
@@ -523,7 +535,7 @@ Smoke test directo contra n8n:
 ```bash
 curl -sS http://localhost:5680/webhook-test/sa-appointment-availability \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer n8n_integrations_service_token_local' \
+  -H 'X-N8N-Webhook-Token: Bearer n8n_webhook_service_token_local' \
   -d '{
     "tool": "appointment_availability",
     "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
@@ -548,7 +560,7 @@ Ejemplo directo para `services_search`:
 ```bash
 curl -sS http://localhost:5680/webhook-test/sa-services-search \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer n8n_integrations_service_token_local' \
+  -H 'X-N8N-Webhook-Token: Bearer n8n_webhook_service_token_local' \
   -d '{
     "tool": "services_search",
     "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",

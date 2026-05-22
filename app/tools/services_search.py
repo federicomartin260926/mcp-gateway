@@ -4,9 +4,11 @@ import logging
 from typing import Any
 
 import httpx
+from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.settings import get_settings
+from app.tools._appointment_common import extract_request_authorization, post_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -129,16 +131,21 @@ def _normalize_success_payload(payload: Any) -> dict[str, Any]:
     return normalized
 
 
-async def _post_services_search(url: str, token: str | None, timeout_seconds: float, body: dict[str, Any]) -> dict[str, Any]:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    timeout = httpx.Timeout(timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=body, headers=headers)
-        response.raise_for_status()
-        return response.json()
+async def _post_services_search(
+    url: str,
+    token: str | None,
+    timeout_seconds: float,
+    body: dict[str, Any],
+    downstream_authorization: str | None = None,
+) -> dict[str, Any]:
+    return await post_webhook(
+        url,
+        token,
+        timeout_seconds,
+        body,
+        downstream_authorization=downstream_authorization,
+        tool_name="services_search",
+    )
 
 
 async def services_search(
@@ -148,6 +155,7 @@ async def services_search(
     active: bool | None = True,
     category: str | None = None,
     limit: int | None = 10,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Search services and products in the CRM through n8n."""
     if isinstance(limit, bool):
@@ -169,6 +177,7 @@ async def services_search(
     webhook_url = _normalize_text(settings.services_search_webhook_url)
     webhook_token = _normalize_text(settings.n8n_webhook_bearer_token)
     timeout_seconds = settings.services_search_timeout_seconds
+    downstream_authorization = extract_request_authorization(ctx)
 
     normalized_tenant_id = _normalize_text(payload.tenant_id)
     normalized_query = _normalize_text(payload.query)
@@ -195,7 +204,13 @@ async def services_search(
     }
 
     try:
-        upstream_payload = await _post_services_search(webhook_url, webhook_token, timeout_seconds, body)
+        upstream_payload = await _post_services_search(
+            webhook_url,
+            webhook_token,
+            timeout_seconds,
+            body,
+            downstream_authorization=downstream_authorization,
+        )
     except httpx.TimeoutException:
         return _empty_payload("Services search request timed out.", "timeout")
     except httpx.HTTPStatusError:
