@@ -172,7 +172,7 @@ Mantén una colección del proyecto para probar webhooks n8n.
 ### Variables recomendadas
 
 - `n8n_base_url=http://localhost:5680`
-- `n8n_webhook_bearer_token=n8n_integrations_service_token_local`
+- `n8n_webhook_bearer_token=n8n-bearer-token`
 - `tenant_id`
 - `existing_customer_phone`
 - `existing_customer_name`

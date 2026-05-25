@@ -535,7 +535,7 @@ Smoke test directo contra n8n:
 ```bash
 curl -sS http://localhost:5680/webhook-test/sa-appointment-availability \
   -H 'Content-Type: application/json' \
-  -H 'X-N8N-Webhook-Token: Bearer n8n_webhook_service_token_local' \
+  -H 'X-N8N-Webhook-Token: Bearer n8n-bearer-token' \
   -d '{
     "tool": "appointment_availability",
     "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
@@ -560,7 +560,7 @@ Ejemplo directo para `services_search`:
 ```bash
 curl -sS http://localhost:5680/webhook-test/sa-services-search \
   -H 'Content-Type: application/json' \
-  -H 'X-N8N-Webhook-Token: Bearer n8n_webhook_service_token_local' \
+  -H 'X-N8N-Webhook-Token: Bearer n8n-bearer-token' \
   -d '{
     "tool": "services_search",
     "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
