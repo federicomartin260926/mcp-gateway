@@ -79,45 +79,69 @@ make up
 
 Con el override local, el servicio también queda publicado en `http://localhost:8010`.
 
-## Desarrollo con Cloudflare Tunnel
+## Desarrollo con ngrok
 
-Para levantar el stack de desarrollo con el túnel desde Docker Compose:
+Para exponer `mcp-gateway` local a OpenAI Responses API durante desarrollo usamos un dominio ngrok estable.
+
+Variables requeridas en `.env`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+NGROK_AUTHTOKEN=...
+NGROK_DOMAIN=lavish-supply-custodian.ngrok-free.dev
 ```
 
-Para ver la URL pública que asigna `cloudflared`:
+Levantado del túnel:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f cloudflared
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile tunnel up -d
 ```
 
-También puedes verla en Docker Desktop, dentro del contenedor `cloudflared`, en la pestaña `Logs`.
-La URL `https://<algo>.trycloudflare.com` que aparezca ahí es la que debes copiar en la URL del servidor MCP correspondiente, por ejemplo en `sales-agent`.
+Eso levanta:
 
-Validación local:
+- `mcp-gateway`
+- `mcp-gateway-ngrok`
+
+Estado:
 
 ```bash
-curl -sS http://localhost:8010/health | jq
-curl -sS http://localhost:8010/info | jq
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile tunnel ps
+```
+
+Logs:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile tunnel logs -f mcp-gateway ngrok
+```
+
+URL pública estable:
+
+```text
+https://lavish-supply-custodian.ngrok-free.dev/mcp
 ```
 
 Validación pública:
 
 ```bash
-curl -sS https://<url-trycloudflare>/health | jq
-curl -sS https://<url-trycloudflare>/info | jq
+curl -i https://lavish-supply-custodian.ngrok-free.dev/health
+curl -i -X POST https://lavish-supply-custodian.ngrok-free.dev/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "ngrok-skip-browser-warning: true" \
+  -d '{}'
 ```
 
-La URL a configurar en `sales-agent` es:
+Resultado esperado:
+
+- `/health` responde `200 OK`
+- `/mcp` con `{}` responde `400` con error de validación JSON-RPC
+
+El flag siguiente es necesario para evitar el error de host público:
 
 ```text
-https://<url-trycloudflare>/mcp
+--host-header=localhost:8010
 ```
 
-La URL del quick tunnel es temporal y puede cambiar al recrear el contenedor `cloudflared`.
-Para un entorno estable a futuro, conviene migrar a un named tunnel con dominio fijo.
+Sin ese ajuste, `/mcp` rechazaba el hostname público de ngrok con `Invalid Host header`.
 
 ## Host validation MCP
 
@@ -127,11 +151,11 @@ Formato:
 
 - lista separada por comas
 - soporta hosts exactos
-- soporta wildcard de subdominio con `*.trycloudflare.com`
+- para desarrollo con ngrok estable, usa `localhost,127.0.0.1,lavish-supply-custodian.ngrok-free.dev`
 
 Valores recomendados:
 
-- desarrollo local: `localhost,127.0.0.1,*.trycloudflare.com`
+- desarrollo local: `localhost,127.0.0.1,lavish-supply-custodian.ngrok-free.dev`
 - producción: `mcp.tech-investments.net`
 
 Si `MCP_ALLOWED_HOSTS` está vacío, no se aplica validación adicional por la app.
@@ -498,10 +522,26 @@ Configura la `ExternalTool` MCP remota en `sales-agent` con algo como:
 - `type`: `mcp_remote`
 - `provider`: `openai_remote_mcp`
 - `server_label`: `tech_investments_mcp`
-- `server_url`: `https://mcp.tech-investments.net`
+- `server_url`: `https://lavish-supply-custodian.ngrok-free.dev/mcp`
 - `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability", "services_search"]`
 
 Si tu cliente MCP necesita la ruta explícita, usa el endpoint `/mcp`.
+
+### Nota para sales-agent
+
+La `ExternalTool` runtime default del tenant debe apuntar a:
+
+```text
+https://lavish-supply-custodian.ngrok-free.dev/mcp
+```
+
+En `sales-agent` eso queda persistido en `external_tools.webhook_url` para:
+
+- `type = mcp_remote`
+- `provider = openai_remote_mcp`
+- `is_runtime_default = true`
+
+No se ejecuta SQL desde este repo; la configuración se gestiona en `sales-agent`/UI.
 
 Para pruebas reales con OpenAI Responses API, el flujo recomendado es validar primero el webhook n8n, después el descubrimiento MCP en `mcp-gateway` y, por último, el uso desde `sales-agent`.
 

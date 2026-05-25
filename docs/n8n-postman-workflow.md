@@ -203,11 +203,13 @@ Cada request debería validar al menos:
 ## Advertencias
 
 - Los webhooks test de n8n requieren `Listen for test event`.
-- Las URLs de quick tunnel de Cloudflare cambian al recrear `cloudflared`.
+- Las URLs de quick tunnel de Cloudflare quedaron descartadas para este flujo.
+- El flujo recomendado de desarrollo remoto usa ngrok con dominio estable.
 - Las credenciales de n8n pueden requerir reasignación tras importar.
 - `confirm`, `cancel` y `reschedule` modifican datos reales en CRM.
 - No guardar tokens reales en JSON exportados ni en git.
 - Mantener tokens locales de ejemplo solo para dev.
+- Para validar `mcp-gateway` remoto desde OpenAI Responses API, usar `https://lavish-supply-custodian.ngrok-free.dev/mcp`.
 
 ## Estado actual de agenda
 

@@ -7,11 +7,20 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate --url http://mcp-gateway:8010
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: mcp-gateway-ngrok
     restart: unless-stopped
+    command:
+      - http
+      - mcp-gateway:8010
+      - --domain=${NGROK_DOMAIN}
+      - --host-header=localhost:8010
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     depends_on:
       - mcp-gateway
     networks:
       - mcp_internal
+    profiles:
+      - tunnel
