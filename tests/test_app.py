@@ -405,7 +405,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "Authorization": "Bearer secret-token",
         "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
@@ -524,7 +524,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "Authorization": "Bearer secret-token",
         "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
@@ -621,7 +621,7 @@ async def test_contact_context_posts_expected_payload(monkeypatch):
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "Authorization": "Bearer secret-token",
         "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {
@@ -696,17 +696,26 @@ async def test_services_search_without_webhook_returns_not_configured(monkeypatc
 
 @pytest.mark.asyncio
 async def test_handoff_request_without_webhook_returns_not_configured(monkeypatch):
+    called = False
+
+    async def fake_post(self, url, json=None, headers=None):
+        nonlocal called
+        called = True
+        raise AssertionError("upstream call should not happen when webhook is missing")
+
     monkeypatch.setattr(
         handoff_request_module,
         "get_settings",
         lambda: Settings(HANDOFF_REQUEST_WEBHOOK_URL=""),
     )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
 
     payload = await handoff_request(tenant_id="tenant-1")
 
     assert payload["ok"] is False
     assert payload["handoff_requested"] is False
     assert payload["status"] == "not_configured"
+    assert called is False
 
 
 @pytest.mark.asyncio
@@ -815,6 +824,55 @@ async def test_handoff_request_posts_expected_payload_without_exposing_secrets(m
 
 
 @pytest.mark.asyncio
+async def test_handoff_request_falls_back_to_generic_n8n_token(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "handoff_requested": True,
+                "status": "accepted",
+                "message": "Handoff registrado.",
+            },
+        )
+
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(
+            HANDOFF_REQUEST_WEBHOOK_URL="https://n8n.example/webhook",
+            HANDOFF_REQUEST_WEBHOOK_TOKEN="",
+            N8N_WEBHOOK_BEARER_TOKEN="n8n-secret-token",
+            HANDOFF_REQUEST_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await handoff_request(
+        tenant_id="tenant-1",
+        reason="needs_human",
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+    )
+
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer n8n-secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
+    }
+    assert payload["ok"] is True
+    assert payload["handoff_requested"] is True
+    assert payload["status"] == "accepted"
+    assert "n8n-secret-token" not in str(payload)
+    assert "TEST_DOWNSTREAM_TOKEN_123456" not in str(payload)
+
+
+@pytest.mark.asyncio
 async def test_handoff_request_rejects_missing_reason(monkeypatch):
     monkeypatch.setattr(
         handoff_request_module,
@@ -910,7 +968,7 @@ async def test_services_search_posts_expected_payload(monkeypatch):
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "X-N8N-Webhook-Token": "Bearer secret-token",
+        "Authorization": "Bearer secret-token",
         "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {

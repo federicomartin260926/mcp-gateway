@@ -68,7 +68,7 @@ def extract_request_authorization(ctx: Context | None) -> str | None:
 def build_webhook_headers(
     token: str | None,
     downstream_authorization: str | None = None,
-    auth_header_name: str = "X-N8N-Webhook-Token",
+    auth_header_name: str = "Authorization",
 ) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if token:
@@ -95,7 +95,7 @@ async def post_webhook(
     timeout_seconds: float,
     body: dict[str, Any],
     downstream_authorization: str | None = None,
-    auth_header_name: str = "X-N8N-Webhook-Token",
+    auth_header_name: str = "Authorization",
     tool_name: str = "n8n_webhook",
 ) -> dict[str, Any]:
     headers = build_webhook_headers(token, downstream_authorization, auth_header_name=auth_header_name)

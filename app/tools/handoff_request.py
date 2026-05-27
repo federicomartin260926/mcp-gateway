@@ -198,7 +198,7 @@ async def handoff_request(
 
     settings = get_settings()
     webhook_url = _normalize_text_value(settings.handoff_request_webhook_url)
-    webhook_token = _normalize_text_value(settings.handoff_request_webhook_token)
+    webhook_token = _normalize_text_value(settings.handoff_request_webhook_token) or _normalize_text_value(settings.n8n_webhook_bearer_token)
     timeout_seconds = settings.handoff_request_timeout_seconds
     downstream_authorization = extract_request_authorization(ctx)
 
@@ -239,7 +239,6 @@ async def handoff_request(
             timeout_seconds,
             body,
             downstream_authorization=downstream_authorization,
-            auth_header_name="Authorization",
             tool_name="handoff_request",
         )
     except httpx.TimeoutException:

@@ -27,6 +27,7 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
 - Reenvía `Authorization` recibido por MCP hacia n8n como `X-Downstream-Authorization` para no mezclar la auth técnica del webhook con la auth downstream hacia CRM.
+- Usa `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` como auth estándar hacia n8n en los webhooks MCP.
 
 ## Flujo de trabajo con n8n y Postman
 
@@ -218,7 +219,7 @@ Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un paylo
 
 - exige al menos `phone` o `email` cuando hay webhook configurado
 - normaliza strings vacíos, espacios y valores tipo `"null"` a `null`
-- envía `X-N8N-Webhook-Token: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `CONTACT_CONTEXT_TIMEOUT_SECONDS` con valor por defecto `5`
 
@@ -305,7 +306,7 @@ Si `APPOINTMENT_AVAILABILITY_WEBHOOK_URL` no está configurada, devuelve un payl
 - `timezone` usa `Europe/Madrid` por defecto
 - `duration_minutes` se limita entre `5` y `240`
 - `limit` se limita entre `1` y `10`
-- envía `X-N8N-Webhook-Token: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS` con valor por defecto `8`
 
@@ -418,7 +419,7 @@ Si `SERVICES_SEARCH_WEBHOOK_URL` no está configurada, devuelve un payload norma
 
 - normaliza strings vacíos, `"null"` y `"undefined"` a `null`
 - limita `limit` entre `1` y `30`
-- envía `X-N8N-Webhook-Token: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
+- envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `SERVICES_SEARCH_TIMEOUT_SECONDS` con valor por defecto `8`
 
@@ -484,7 +485,7 @@ Variables de entorno:
 
 La tool `handoff_request` registra un handoff operativo inferido por el LLM delegando en un webhook n8n.
 Si `HANDOFF_REQUEST_WEBHOOK_URL` no está configurada, devuelve un payload normalizado con `status: "not_configured"` y no llama al upstream.
-Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la llamada al webhook n8n se envía sin token de servicio y sigue siendo usable en desarrollo local.
+Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER_TOKEN` como token de servicio. Solo si ambos están vacíos, la llamada se envía sin auth de servicio y sigue siendo usable en desarrollo local.
 
 ### Input
 
@@ -517,7 +518,7 @@ Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la llamada al webhook n8n se en
 - normaliza strings vacíos, `"null"` y `"undefined"` a `null`
 - limita `conversation.last_messages` a los 8 mensajes más recientes
 - `priority` acepta `low`, `normal`, `high` y `urgent`; cualquier otro valor se normaliza a `normal`
-- envía `Authorization: Bearer <HANDOFF_REQUEST_WEBHOOK_TOKEN>` solo si el token existe y no está vacío
+- envía `Authorization: Bearer <HANDOFF_REQUEST_WEBHOOK_TOKEN>` si el override existe y no está vacío; en caso contrario usa `N8N_WEBHOOK_BEARER_TOKEN`
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `HANDOFF_REQUEST_TIMEOUT_SECONDS` con valor por defecto `8`
 
@@ -673,7 +674,7 @@ Smoke test directo contra n8n:
 ```bash
 curl -sS http://localhost:5680/webhook-test/sa-appointment-availability \
   -H 'Content-Type: application/json' \
-  -H 'X-N8N-Webhook-Token: Bearer n8n-bearer-token' \
+  -H 'Authorization: Bearer n8n-bearer-token' \
   -d '{
     "tool": "appointment_availability",
     "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
@@ -698,7 +699,7 @@ Ejemplo directo para `services_search`:
 ```bash
 curl -sS http://localhost:5680/webhook-test/sa-services-search \
   -H 'Content-Type: application/json' \
-  -H 'X-N8N-Webhook-Token: Bearer n8n-bearer-token' \
+  -H 'Authorization: Bearer n8n-bearer-token' \
   -d '{
     "tool": "services_search",
     "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
