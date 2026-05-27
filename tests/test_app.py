@@ -873,6 +873,76 @@ async def test_handoff_request_falls_back_to_generic_n8n_token(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handoff_request_logs_safe_metadata(monkeypatch, caplog):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "handoff_requested": True,
+                "status": "accepted",
+                "message": "Handoff registrado.",
+            },
+        )
+
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(
+            HANDOFF_REQUEST_WEBHOOK_URL="https://n8n.example/webhook",
+            HANDOFF_REQUEST_WEBHOOK_TOKEN="handoff-secret-token",
+            HANDOFF_REQUEST_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    with caplog.at_level("INFO"):
+        payload = await handoff_request(
+            tenant_id="tenant-1",
+            reason="needs_human",
+            ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+        )
+
+    log_text = "\n".join(record.message for record in caplog.records)
+    assert "service_auth_source=handoff_request_webhook_token" in log_text
+    assert "downstream_authorization_present=True" in log_text
+    assert "TEST_DOWNSTREAM_TOKEN_123456" not in log_text
+    assert "handoff-secret-token" not in log_text
+    assert payload["status"] == "accepted"
+    assert captured["headers"]["Authorization"] == "Bearer handoff-secret-token"
+
+
+@pytest.mark.asyncio
+async def test_handoff_request_reports_upstream_unauthorized(monkeypatch):
+    request = httpx.Request("POST", "https://n8n.example/webhook")
+
+    async def fake_post(self, url, json=None, headers=None):
+        response = httpx.Response(401, request=request, json={"detail": "unauthorized"})
+        raise httpx.HTTPStatusError("unauthorized", request=request, response=response)
+
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(
+            HANDOFF_REQUEST_WEBHOOK_URL="https://n8n.example/webhook",
+            HANDOFF_REQUEST_WEBHOOK_TOKEN="handoff-secret-token",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await handoff_request(tenant_id="tenant-1", reason="needs_human")
+
+    assert payload["ok"] is False
+    assert payload["handoff_requested"] is False
+    assert payload["status"] == "upstream_error"
+    assert "unauthorized" not in payload["message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_handoff_request_without_any_token_returns_not_configured_and_does_not_call_upstream(monkeypatch):
     called = False
 

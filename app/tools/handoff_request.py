@@ -125,6 +125,18 @@ def _normalize_priority(value: Any) -> str:
     return "normal"
 
 
+def _resolve_service_token(settings: Any) -> tuple[str | None, str]:
+    override_token = _normalize_text_value(settings.handoff_request_webhook_token)
+    if override_token is not None:
+        return override_token, "handoff_request_webhook_token"
+
+    generic_token = _normalize_text_value(settings.n8n_webhook_bearer_token)
+    if generic_token is not None:
+        return generic_token, "n8n_webhook_bearer_token"
+
+    return None, "missing"
+
+
 def _empty_payload(message: str, status: str) -> dict[str, Any]:
     return {
         "ok": False,
@@ -198,13 +210,19 @@ async def handoff_request(
 
     settings = get_settings()
     webhook_url = _normalize_text_value(settings.handoff_request_webhook_url)
-    webhook_token = _normalize_text_value(settings.handoff_request_webhook_token) or _normalize_text_value(
-        settings.n8n_webhook_bearer_token
-    )
+    webhook_token, webhook_token_source = _resolve_service_token(settings)
     timeout_seconds = settings.handoff_request_timeout_seconds
     downstream_authorization = extract_request_authorization(ctx)
 
     normalized_tenant_id = _normalize_text_value(payload.tenant_id)
+    logger.info(
+        "handoff_request start tenant_id=%s webhook_configured=%s service_auth_configured=%s service_auth_source=%s downstream_authorization_present=%s",
+        normalized_tenant_id or "-",
+        webhook_url is not None,
+        webhook_token is not None,
+        webhook_token_source,
+        downstream_authorization is not None,
+    )
     if webhook_url is None:
         return _empty_payload("Handoff request service is not configured.", "not_configured")
     if webhook_token is None:
@@ -245,11 +263,29 @@ async def handoff_request(
             downstream_authorization=downstream_authorization,
             tool_name="handoff_request",
         )
+        logger.info(
+            "handoff_request upstream success tenant_id=%s status_code=%s",
+            normalized_tenant_id,
+            200,
+        )
     except httpx.TimeoutException:
+        logger.warning("handoff_request upstream timeout tenant_id=%s", normalized_tenant_id)
         return _empty_payload("Handoff request timed out.", "timeout")
-    except httpx.HTTPStatusError:
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        logger.warning(
+            "handoff_request upstream http error tenant_id=%s status_code=%s error=%s",
+            normalized_tenant_id,
+            status_code if status_code is not None else "-",
+            exc.__class__.__name__,
+        )
         return _empty_payload("Handoff request service returned an error.", "upstream_error")
-    except httpx.RequestError:
+    except httpx.RequestError as exc:
+        logger.warning(
+            "handoff_request upstream request error tenant_id=%s error=%s",
+            normalized_tenant_id,
+            exc.__class__.__name__,
+        )
         return _empty_payload("Handoff request service is unavailable.", "upstream_error")
     except Exception:
         logger.exception("Unexpected error while creating handoff request")

@@ -487,6 +487,8 @@ La tool `handoff_request` registra un handoff operativo inferido por el LLM dele
 Si `HANDOFF_REQUEST_WEBHOOK_URL` no está configurada, devuelve un payload normalizado con `status: "not_configured"` y no llama al upstream.
 Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER_TOKEN` como token de servicio.
 Si ambos tokens están vacíos, la tool devuelve `status: "not_configured"` y no llama al upstream.
+En local, si el workflow n8n está publicado, usa `http://host.docker.internal:5680/webhook/sa-handoff-request`.
+Si estás escuchando manualmente el workflow en modo test, cambia a `http://host.docker.internal:5680/webhook-test/sa-handoff-request`.
 
 Payload recomendado:
 
