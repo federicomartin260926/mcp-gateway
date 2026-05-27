@@ -517,7 +517,7 @@ Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la llamada al webhook n8n se en
 - normaliza strings vacíos, `"null"` y `"undefined"` a `null`
 - limita `conversation.last_messages` a los 8 mensajes más recientes
 - `priority` acepta `low`, `normal`, `high` y `urgent`; cualquier otro valor se normaliza a `normal`
-- envía `X-N8N-Webhook-Token: Bearer <HANDOFF_REQUEST_WEBHOOK_TOKEN>` solo si el token existe y no está vacío
+- envía `Authorization: Bearer <HANDOFF_REQUEST_WEBHOOK_TOKEN>` solo si el token existe y no está vacío
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `HANDOFF_REQUEST_TIMEOUT_SECONDS` con valor por defecto `8`
 

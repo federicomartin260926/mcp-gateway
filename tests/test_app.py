@@ -768,7 +768,7 @@ async def test_handoff_request_posts_expected_payload_without_exposing_secrets(m
     assert captured["url"] == "https://n8n.example/webhook"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "X-N8N-Webhook-Token": "Bearer handoff-secret-token",
+        "Authorization": "Bearer handoff-secret-token",
         "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
     }
     assert captured["json"] == {

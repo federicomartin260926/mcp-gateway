@@ -239,6 +239,7 @@ async def handoff_request(
             timeout_seconds,
             body,
             downstream_authorization=downstream_authorization,
+            auth_header_name="Authorization",
             tool_name="handoff_request",
         )
     except httpx.TimeoutException:

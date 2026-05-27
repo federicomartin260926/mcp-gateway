@@ -65,10 +65,14 @@ def extract_request_authorization(ctx: Context | None) -> str | None:
     return None
 
 
-def build_webhook_headers(token: str | None, downstream_authorization: str | None = None) -> dict[str, str]:
+def build_webhook_headers(
+    token: str | None,
+    downstream_authorization: str | None = None,
+    auth_header_name: str = "X-N8N-Webhook-Token",
+) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if token:
-        headers["X-N8N-Webhook-Token"] = f"Bearer {token}"
+        headers[auth_header_name] = f"Bearer {token}"
     if downstream_authorization:
         headers["X-Downstream-Authorization"] = downstream_authorization
     return headers
@@ -91,9 +95,10 @@ async def post_webhook(
     timeout_seconds: float,
     body: dict[str, Any],
     downstream_authorization: str | None = None,
+    auth_header_name: str = "X-N8N-Webhook-Token",
     tool_name: str = "n8n_webhook",
 ) -> dict[str, Any]:
-    headers = build_webhook_headers(token, downstream_authorization)
+    headers = build_webhook_headers(token, downstream_authorization, auth_header_name=auth_header_name)
     log_webhook_auth(tool_name, downstream_authorization)
 
     timeout = httpx.Timeout(timeout_seconds)
