@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     appointment_booking_invitation_timeout_seconds: float = Field(default=8, alias="APPOINTMENT_BOOKING_INVITATION_TIMEOUT_SECONDS")
     services_search_webhook_url: str = Field(default="", alias="SERVICES_SEARCH_WEBHOOK_URL")
     services_search_timeout_seconds: float = Field(default=8, alias="SERVICES_SEARCH_TIMEOUT_SECONDS")
+    handoff_request_webhook_url: str = Field(default="", alias="HANDOFF_REQUEST_WEBHOOK_URL")
+    handoff_request_webhook_token: str = Field(default="", alias="HANDOFF_REQUEST_WEBHOOK_TOKEN")
+    handoff_request_timeout_seconds: float = Field(default=8, alias="HANDOFF_REQUEST_TIMEOUT_SECONDS")
 
 
 @lru_cache

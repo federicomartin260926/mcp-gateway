@@ -9,6 +9,7 @@ from app.tools.appointment_reschedule import appointment_reschedule
 from app.tools.appointment_cancel import appointment_cancel
 from app.tools.appointment_booking_invitation import appointment_booking_invitation
 from app.tools.services_search import services_search
+from app.tools.handoff_request import handoff_request
 
 
 def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, str]]:
@@ -52,6 +53,10 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         {
             "name": "services_search",
             "description": "Search services and products in the CRM through n8n.",
+        },
+        {
+            "name": "handoff_request",
+            "description": "Register a human handoff request through n8n.",
         },
     ]
 

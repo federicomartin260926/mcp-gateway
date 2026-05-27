@@ -16,6 +16,7 @@ from app.tools.appointment_availability import appointment_availability
 from app.tools.appointment_confirm import appointment_confirm
 from app.tools.appointment_reschedule import appointment_reschedule
 from app.tools.contact_context import contact_context
+from app.tools.handoff_request import handoff_request
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
 from app.tools.services_search import services_search
@@ -27,6 +28,7 @@ appointment_availability_module = importlib.import_module("app.tools.appointment
 appointment_confirm_module = importlib.import_module("app.tools.appointment_confirm")
 appointment_reschedule_module = importlib.import_module("app.tools.appointment_reschedule")
 contact_context_module = importlib.import_module("app.tools.contact_context")
+handoff_request_module = importlib.import_module("app.tools.handoff_request")
 services_search_module = importlib.import_module("app.tools.services_search")
 appointment_common_module = importlib.import_module("app.tools._appointment_common")
 
@@ -88,6 +90,7 @@ def test_info_endpoint_lists_tools():
     assert "appointment_cancel" in [tool["name"] for tool in payload["available_tools"]]
     assert "appointment_booking_invitation" in [tool["name"] for tool in payload["available_tools"]]
     assert "services_search" in [tool["name"] for tool in payload["available_tools"]]
+    assert "handoff_request" in [tool["name"] for tool in payload["available_tools"]]
 
 
 def test_info_endpoint_lists_debug_tool_when_enabled():
@@ -145,6 +148,7 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "appointment_cancel" in [tool["name"] for tool in tools]
         assert "appointment_booking_invitation" in [tool["name"] for tool in tools]
         assert "services_search" in [tool["name"] for tool in tools]
+        assert "handoff_request" in [tool["name"] for tool in tools]
 
         call_response = client.post(
             "/mcp",
@@ -688,6 +692,141 @@ async def test_services_search_without_webhook_returns_not_configured(monkeypatc
     assert payload["ok"] is False
     assert payload["found"] is False
     assert payload["error_code"] == "not_configured"
+
+
+@pytest.mark.asyncio
+async def test_handoff_request_without_webhook_returns_not_configured(monkeypatch):
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(HANDOFF_REQUEST_WEBHOOK_URL=""),
+    )
+
+    payload = await handoff_request(tenant_id="tenant-1")
+
+    assert payload["ok"] is False
+    assert payload["handoff_requested"] is False
+    assert payload["status"] == "not_configured"
+
+
+@pytest.mark.asyncio
+async def test_handoff_request_posts_expected_payload_without_exposing_secrets(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "handoff_requested": True,
+                "status": "requested",
+                "message": "Handoff request queued.",
+            },
+        )
+
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(
+            HANDOFF_REQUEST_WEBHOOK_URL="https://n8n.example/webhook",
+            HANDOFF_REQUEST_WEBHOOK_TOKEN="handoff-secret-token",
+            HANDOFF_REQUEST_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await handoff_request(
+        tenant_id=" tenant-1 ",
+        contact={
+            "phone": " +34999999999 ",
+            "email": "null",
+            "name": " Cliente Demo ",
+            "external_id": " ext-1 ",
+        },
+        conversation={
+            "id": " conv-1 ",
+            "external_id": " ext-conv-1 ",
+            "channel": " whatsapp ",
+            "status": " pending_human ",
+            "summary": " Resumen corto ",
+            "last_messages": [f"mensaje {index}" for index in range(10)],
+        },
+        reason="frustration",
+        priority="high",
+        message="Necesito que lo revise una persona.",
+        metadata={
+            "source": "sales-agent",
+            "nested": {"visible": "yes"},
+        },
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "X-N8N-Webhook-Token": "Bearer handoff-secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
+    }
+    assert captured["json"] == {
+        "event": "sales_agent.handoff_requested",
+        "tenant_id": "tenant-1",
+        "contact": {
+            "phone": "+34999999999",
+            "email": None,
+            "name": "Cliente Demo",
+            "external_id": "ext-1",
+        },
+        "conversation": {
+            "id": "conv-1",
+            "external_conversation_id": "ext-conv-1",
+            "channel": "whatsapp",
+            "status": "pending_human",
+            "summary": "Resumen corto",
+            "last_messages": [
+                "mensaje 2",
+                "mensaje 3",
+                "mensaje 4",
+                "mensaje 5",
+                "mensaje 6",
+                "mensaje 7",
+                "mensaje 8",
+                "mensaje 9",
+            ],
+        },
+        "reason": "frustration",
+        "priority": "high",
+        "message": "Necesito que lo revise una persona.",
+        "metadata": {
+            "source": "mcp-gateway",
+            "tool": "handoff_request",
+            "nested": {"visible": "yes"},
+        },
+    }
+    assert payload["ok"] is True
+    assert payload["handoff_requested"] is True
+    assert payload["status"] == "accepted"
+    assert payload["message"] == "Handoff request queued."
+    assert payload["external_reference"] is None
+    assert "Bearer TEST_DOWNSTREAM_TOKEN_123456" not in str(captured["json"])
+
+
+@pytest.mark.asyncio
+async def test_handoff_request_rejects_missing_reason(monkeypatch):
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(HANDOFF_REQUEST_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+
+    payload = await handoff_request(tenant_id="tenant-1", reason=" ")
+
+    assert payload["ok"] is False
+    assert payload["handoff_requested"] is False
+    assert payload["status"] == "validation_error"
 
 
 @pytest.mark.asyncio

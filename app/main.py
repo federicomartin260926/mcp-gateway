@@ -24,6 +24,7 @@ from app.tools import (
     contact_context_mock,
     echo,
     services_search,
+    handoff_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ def build_mcp_server(enable_debug_tools: bool = False) -> FastMCP:
     mcp.tool()(appointment_cancel)
     mcp.tool()(appointment_booking_invitation)
     mcp.tool()(services_search)
+    mcp.tool()(handoff_request)
     if enable_debug_tools:
         mcp.tool()(debug_auth_context)
     return mcp

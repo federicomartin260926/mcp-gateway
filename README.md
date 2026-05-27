@@ -18,9 +18,11 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
   - `appointment_cancel`
   - `appointment_booking_invitation`
   - `services_search`
+  - `handoff_request`
 - Incluye la tool real `contact_context`, delegada a un webhook n8n configurable.
 - Incluye la tool real `appointment_availability`, delegada a un webhook n8n configurable para disponibilidad de citas.
 - Incluye la tool real `services_search`, delegada a un webhook n8n configurable para buscar productos y servicios del CRM.
+- Incluye la tool real `handoff_request`, delegada a un webhook n8n configurable para registrar handoffs operativos inferidos por el LLM.
 - Incluye una tool temporal de debug, `debug_auth_context`, habilitable con `MCP_ENABLE_DEBUG_TOOLS=true`, para validar de forma segura si llega `Authorization` desde OpenAI Responses API.
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
@@ -46,6 +48,7 @@ La guía operativa completa está en [docs/n8n-postman-workflow.md](docs/n8n-pos
 - `appointment_events` ya validado.
 - `services_search` ya validado.
 - `appointment_confirm`, `appointment_reschedule`, `appointment_cancel` y `appointment_booking_invitation` expuestos como tools MCP.
+- `handoff_request` expuesta como tool MCP para handoffs inferidos por LLM.
 
 ## Downstream authorization
 
@@ -471,6 +474,100 @@ Si `SERVICES_SEARCH_WEBHOOK_URL` no está configurada, devuelve un payload norma
 
 Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `found: false`, `count: 0`, `items: []`, `categories: []`, `message` útil y `error_code`.
 
+## Handoff request
+
+Variables de entorno:
+
+- `HANDOFF_REQUEST_WEBHOOK_URL`
+- `HANDOFF_REQUEST_WEBHOOK_TOKEN`
+- `HANDOFF_REQUEST_TIMEOUT_SECONDS`
+
+La tool `handoff_request` registra un handoff operativo inferido por el LLM delegando en un webhook n8n.
+Si `HANDOFF_REQUEST_WEBHOOK_URL` no está configurada, devuelve un payload normalizado con `status: "not_configured"` y no llama al upstream.
+Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la llamada al webhook n8n se envía sin token de servicio y sigue siendo usable en desarrollo local.
+
+### Input
+
+```json
+{
+  "tenant_id": "string | null",
+  "contact": {
+    "phone": "string | null",
+    "email": "string | null",
+    "name": "string | null",
+    "external_id": "string | null"
+  },
+  "conversation": {
+    "id": "string | null",
+    "external_conversation_id": "string | null",
+    "channel": "string | null",
+    "status": "string | null",
+    "summary": "string | null",
+    "last_messages": ["string"]
+  },
+  "reason": "string | null",
+  "priority": "low | normal | high | urgent",
+  "message": "string | null",
+  "metadata": {}
+}
+```
+
+### Reglas
+
+- normaliza strings vacíos, `"null"` y `"undefined"` a `null`
+- limita `conversation.last_messages` a los 8 mensajes más recientes
+- `priority` acepta `low`, `normal`, `high` y `urgent`; cualquier otro valor se normaliza a `normal`
+- envía `X-N8N-Webhook-Token: Bearer <HANDOFF_REQUEST_WEBHOOK_TOKEN>` solo si el token existe y no está vacío
+- si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
+- usa `HANDOFF_REQUEST_TIMEOUT_SECONDS` con valor por defecto `8`
+
+### Payload enviado a n8n
+
+```json
+{
+  "event": "sales_agent.handoff_requested",
+  "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+  "contact": {
+    "phone": "+34611949358",
+    "email": null,
+    "name": "Lucia Garcia",
+    "external_id": null
+  },
+  "conversation": {
+    "id": "conversation-1",
+    "external_conversation_id": "external-conv-1",
+    "channel": "whatsapp",
+    "status": "pending_human",
+    "summary": "Caso sensible.",
+    "last_messages": [
+      "Mensaje 1",
+      "Mensaje 2"
+    ]
+  },
+  "reason": "frustration",
+  "priority": "high",
+  "message": "El caso necesita revisión humana.",
+  "metadata": {
+    "source": "mcp-gateway",
+    "tool": "handoff_request"
+  }
+}
+```
+
+### Output esperado
+
+```json
+{
+  "ok": true,
+  "handoff_requested": true,
+  "status": "accepted",
+  "message": "Handoff registrado.",
+  "external_reference": null
+}
+```
+
+Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `handoff_requested: false`, un `status` controlado y un `message` útil.
+
 ## Tools disponibles
 
 - `echo`
@@ -478,6 +575,7 @@ Si hay error de configuración, validación o upstream, la tool devuelve `ok: fa
 - `contact_context`
 - `appointment_availability`
 - `services_search`
+- `handoff_request`
 
 ### `echo`
 
@@ -523,7 +621,7 @@ Configura la `ExternalTool` MCP remota en `sales-agent` con algo como:
 - `provider`: `openai_remote_mcp`
 - `server_label`: `tech_investments_mcp`
 - `server_url`: `https://lavish-supply-custodian.ngrok-free.dev/mcp`
-- `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability", "services_search"]`
+- `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability", "services_search", "handoff_request"]`
 
 Si tu cliente MCP necesita la ruta explícita, usa el endpoint `/mcp`.
 
