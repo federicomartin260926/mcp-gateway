@@ -488,6 +488,19 @@ Si `HANDOFF_REQUEST_WEBHOOK_URL` no está configurada, devuelve un payload norma
 Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER_TOKEN` como token de servicio.
 Si ambos tokens están vacíos, la tool devuelve `status: "not_configured"` y no llama al upstream.
 
+Payload recomendado:
+
+- `tenant_id`
+- `reason`
+- `priority` cuando pueda inferirse
+- `message` con el último mensaje relevante del usuario
+- `contact.name`, `contact.phone`, `contact.email`
+- `conversation.id`, `conversation.external_conversation_id`, `conversation.channel`
+- `conversation.summary`
+- `conversation.last_messages` acotado a 6-8 mensajes recientes
+
+Ese contexto permite que n8n prepare un email o una tarea humana con suficiente información y deja el mismo contrato listo para un futuro alta de actividad en CRM.
+
 ### Input
 
 ```json
