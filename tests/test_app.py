@@ -873,6 +873,36 @@ async def test_handoff_request_falls_back_to_generic_n8n_token(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handoff_request_without_any_token_returns_not_configured_and_does_not_call_upstream(monkeypatch):
+    called = False
+
+    async def fake_post(self, url, json=None, headers=None):
+        nonlocal called
+        called = True
+        raise AssertionError("upstream call should not happen without n8n auth token")
+
+    monkeypatch.setattr(
+        handoff_request_module,
+        "get_settings",
+        lambda: Settings(
+            HANDOFF_REQUEST_WEBHOOK_URL="https://n8n.example/webhook",
+            HANDOFF_REQUEST_WEBHOOK_TOKEN="",
+            N8N_WEBHOOK_BEARER_TOKEN="",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await handoff_request(tenant_id="tenant-1", reason="needs_human")
+
+    assert payload["ok"] is False
+    assert payload["handoff_requested"] is False
+    assert payload["status"] == "not_configured"
+    assert called is False
+    assert "token" not in payload["message"].lower()
+    assert "Bearer" not in str(payload)
+
+
+@pytest.mark.asyncio
 async def test_handoff_request_rejects_missing_reason(monkeypatch):
     monkeypatch.setattr(
         handoff_request_module,

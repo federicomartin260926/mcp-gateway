@@ -198,12 +198,16 @@ async def handoff_request(
 
     settings = get_settings()
     webhook_url = _normalize_text_value(settings.handoff_request_webhook_url)
-    webhook_token = _normalize_text_value(settings.handoff_request_webhook_token) or _normalize_text_value(settings.n8n_webhook_bearer_token)
+    webhook_token = _normalize_text_value(settings.handoff_request_webhook_token) or _normalize_text_value(
+        settings.n8n_webhook_bearer_token
+    )
     timeout_seconds = settings.handoff_request_timeout_seconds
     downstream_authorization = extract_request_authorization(ctx)
 
     normalized_tenant_id = _normalize_text_value(payload.tenant_id)
     if webhook_url is None:
+        return _empty_payload("Handoff request service is not configured.", "not_configured")
+    if webhook_token is None:
         return _empty_payload("Handoff request service is not configured.", "not_configured")
     if normalized_tenant_id is None:
         return _empty_payload("tenant_id is required to create a handoff request.", "validation_error")

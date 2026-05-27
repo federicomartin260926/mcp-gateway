@@ -485,7 +485,8 @@ Variables de entorno:
 
 La tool `handoff_request` registra un handoff operativo inferido por el LLM delegando en un webhook n8n.
 Si `HANDOFF_REQUEST_WEBHOOK_URL` no está configurada, devuelve un payload normalizado con `status: "not_configured"` y no llama al upstream.
-Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER_TOKEN` como token de servicio. Solo si ambos están vacíos, la llamada se envía sin auth de servicio y sigue siendo usable en desarrollo local.
+Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER_TOKEN` como token de servicio.
+Si ambos tokens están vacíos, la tool devuelve `status: "not_configured"` y no llama al upstream.
 
 ### Input
 
@@ -519,6 +520,7 @@ Si `HANDOFF_REQUEST_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER
 - limita `conversation.last_messages` a los 8 mensajes más recientes
 - `priority` acepta `low`, `normal`, `high` y `urgent`; cualquier otro valor se normaliza a `normal`
 - envía `Authorization: Bearer <HANDOFF_REQUEST_WEBHOOK_TOKEN>` si el override existe y no está vacío; en caso contrario usa `N8N_WEBHOOK_BEARER_TOKEN`
+- si no hay ninguno de los dos tokens, devuelve `status: "not_configured"` y no llama al webhook
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `HANDOFF_REQUEST_TIMEOUT_SECONDS` con valor por defecto `8`
 
