@@ -7,19 +7,34 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  dev-router:
+    image: nginx:alpine
+    container_name: mcp-dev-router
+    restart: unless-stopped
+    volumes:
+      - ./docker/dev-router/nginx.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mcp-gateway
+    networks:
+      - mcp_internal
+    profiles:
+      - tunnel
+
   ngrok:
     image: ngrok/ngrok:latest
     container_name: mcp-gateway-ngrok
     restart: unless-stopped
     command:
       - http
-      - mcp-gateway:8010
+      - dev-router:8088
       - --domain=${NGROK_DOMAIN}
-      - --host-header=localhost:8010
+      - --host-header=lavish-supply-custodian.ngrok-free.dev
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     depends_on:
-      - mcp-gateway
+      - dev-router
     networks:
       - mcp_internal
     profiles:

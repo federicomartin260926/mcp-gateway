@@ -83,9 +83,11 @@ make up
 
 Con el override local, el servicio también queda publicado en `http://localhost:8010`.
 
-## Desarrollo con ngrok
+## Desarrollo con ngrok y proxy local
 
 Para exponer `mcp-gateway` local a OpenAI Responses API durante desarrollo usamos un dominio ngrok estable.
+
+En este entorno el túnel no apunta directamente a `mcp-gateway`. Primero entra por `dev-router`, un Nginx local que actúa como proxy y reexpone `/mcp`, `/health` e `/info` antes de pasar el tráfico a la app.
 
 Variables requeridas en `.env`:
 
@@ -103,6 +105,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile tunnel 
 Eso levanta:
 
 - `mcp-gateway`
+- `dev-router`
 - `mcp-gateway-ngrok`
 
 Estado:
@@ -139,13 +142,7 @@ Resultado esperado:
 - `/health` responde `200 OK`
 - `/mcp` con `{}` responde `400` con error de validación JSON-RPC
 
-El flag siguiente es necesario para evitar el error de host público:
-
-```text
---host-header=localhost:8010
-```
-
-Sin ese ajuste, `/mcp` rechazaba el hostname público de ngrok con `Invalid Host header`.
+`dev-router` se encarga de reenviar `Host: localhost:8010` hacia `mcp-gateway`, así que el host que ve la app ya no depende de que `ngrok` apunte directo al backend.
 
 ## Host validation MCP
 
