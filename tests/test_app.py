@@ -50,6 +50,16 @@ def decode_sse_json(response):
     return json.loads(response.text)
 
 
+def _tool_input_properties(tools, tool_name: str) -> dict[str, object]:
+    tool = next(tool for tool in tools if tool["name"] == tool_name)
+    schema = tool.get("inputSchema") or tool.get("input_schema") or {}
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            return properties
+    return {}
+
+
 def make_context(authorization: str | None = None):
     headers = {}
     if authorization is not None:
@@ -149,6 +159,15 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "appointment_booking_invitation" in [tool["name"] for tool in tools]
         assert "services_search" in [tool["name"] for tool in tools]
         assert "handoff_request" in [tool["name"] for tool in tools]
+        availability_properties = _tool_input_properties(tools, "appointment_availability")
+        confirm_properties = _tool_input_properties(tools, "appointment_confirm")
+        booking_properties = _tool_input_properties(tools, "appointment_booking_invitation")
+        assert "service_id" in availability_properties
+        assert "service_ref" in availability_properties
+        assert "service_id" in confirm_properties
+        assert "service_ref" in confirm_properties
+        assert "service_id" in booking_properties
+        assert "service_ref" in booking_properties
 
         call_response = client.post(
             "/mcp",
@@ -388,6 +407,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
         start_at=" 2026-05-20T10:00:00+02:00 ",
         end_at=" 2026-05-20T10:30:00+02:00 ",
         timezone=" Europe/Madrid ",
+        service_id=" 019e8ce0-0864-7720-af82-a5c98df2d2dd ",
         service_ref=" null ",
         owner_ref=" 019c33aa-5f3d-729d-933e-3a8c28a2e66d ",
         contact={
@@ -419,6 +439,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
             },
         },
         "timezone": "Europe/Madrid",
+        "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
         "service_ref": None,
         "contact": {
             "phone": "+34611949358",
@@ -511,6 +532,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         timezone="  ",
         duration_minutes=30,
         limit=6,
+        service_id="019e8ce0-0864-7720-af82-a5c98df2d2dd",
         service_ref="null",
         owner_ref="",
         contact={
@@ -535,6 +557,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         "timezone": "Europe/Madrid",
         "duration_minutes": 30,
         "limit": 6,
+        "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
         "service_ref": None,
         "owner_ref": None,
         "contact": {
@@ -549,6 +572,89 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
     assert payload["timezone"] == "Europe/Madrid"
     assert payload["slots"][0]["owner"]["name"] == "Carla"
     assert payload["message"].startswith("Hay 6")
+
+
+@pytest.mark.asyncio
+async def test_appointment_booking_invitation_posts_expected_payload(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "created": True,
+                "booking_url": "https://booking.example/invite/abc",
+                "message": "Booking invitation created.",
+                "raw_summary": {"status": "created"},
+            },
+        )
+
+    monkeypatch.setattr(
+        appointment_booking_invitation_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_BOOKING_INVITATION_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            APPOINTMENT_BOOKING_INVITATION_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_booking_invitation(
+        tenant_id=" 019dddb7-db7b-7cdd-963e-4294476ba1e7 ",
+        contact={
+            "phone": " +34611949358 ",
+            "email": " undefined ",
+            "name": " Lucia Garcia ",
+        },
+        timezone=" Europe/Madrid ",
+        service_id=" 019e8ce0-0864-7720-af82-a5c98df2d2dd ",
+        service_ref=" maria-laser-cuerpo-entero ",
+        owner_ref=" 019c33aa-5f3d-729d-933e-3a8c28a2e66d ",
+        date_from=" 2026-05-11 ",
+        date_to=" 2026-05-15 ",
+        duration_minutes=30,
+        notes=" Seguimiento de reserva ",
+        conversation_id=" conv-1 ",
+        entrypoint_ref=" ref-1 ",
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
+    }
+    assert captured["json"] == {
+        "tool": "appointment_booking_invitation",
+        "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
+        "contact": {
+            "phone": "+34611949358",
+            "email": None,
+            "name": "Lucia Garcia",
+        },
+        "timezone": "Europe/Madrid",
+        "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
+        "service_ref": "maria-laser-cuerpo-entero",
+        "owner_ref": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
+        "date_from": "2026-05-11",
+        "date_to": "2026-05-15",
+        "duration_minutes": 30,
+        "notes": "Seguimiento de reserva",
+        "conversation_id": "conv-1",
+        "entrypoint_ref": "ref-1",
+        "source": "mcp-gateway",
+    }
+    assert payload["ok"] is True
+    assert payload["created"] is True
+    assert payload["booking_url"] == "https://booking.example/invite/abc"
+    assert payload["message"] == "Booking invitation created."
 
 
 @pytest.mark.asyncio

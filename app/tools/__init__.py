@@ -28,7 +28,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_availability",
-            "description": "Get appointment availability slots for a tenant, date range and optional contact.",
+            "description": "Get appointment availability slots for a tenant, date range and optional contact. Prefer service_id UUID from services_search; use service_ref only as fallback.",
         },
         {
             "name": "appointment_events",
@@ -36,7 +36,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_confirm",
-            "description": "Confirm an appointment through n8n for a tenant, contact and selected slot.",
+            "description": "Confirm an appointment through n8n for a tenant, contact and selected slot. Prefer service_id UUID from services_search; use service_ref only as fallback.",
         },
         {
             "name": "appointment_reschedule",
@@ -48,7 +48,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_booking_invitation",
-            "description": "Create a booking invitation link through n8n.",
+            "description": "Create a booking invitation link through n8n. Prefer service_id UUID from services_search; use service_ref only as fallback.",
         },
         {
             "name": "services_search",

@@ -82,6 +82,7 @@ class AppointmentAvailabilityInput(BaseModel):
     timezone: str | None = "Europe/Madrid"
     duration_minutes: int | None = 30
     limit: int | None = 6
+    service_id: str | None = None
     service_ref: str | None = None
     owner_ref: str | None = None
     contact: AppointmentAvailabilityContactInput | None = None
@@ -149,12 +150,17 @@ async def appointment_availability(
     timezone: str | None = "Europe/Madrid",
     duration_minutes: int | None = 30,
     limit: int | None = 6,
+    service_id: str | None = None,
     service_ref: str | None = None,
     owner_ref: str | None = None,
     contact: AppointmentAvailabilityContactInput | dict[str, Any] | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Get appointment availability slots for a tenant, date range and optional contact."""
+    """Get appointment availability slots for a tenant, date range and optional contact.
+
+    Prefer `service_id` with the canonical UUID returned by `services_search`.
+    Use `service_ref` only as a fallback with slug, integration key or external reference.
+    """
     payload = AppointmentAvailabilityInput(
         tenant_id=tenant_id,
         date_from=date_from,
@@ -162,6 +168,7 @@ async def appointment_availability(
         timezone=timezone,
         duration_minutes=duration_minutes,
         limit=limit,
+        service_id=service_id,
         service_ref=service_ref,
         owner_ref=owner_ref,
         contact=contact,
@@ -178,6 +185,7 @@ async def appointment_availability(
     normalized_date_to = _normalize_text(payload.date_to)
     normalized_tenant_id = _normalize_text(payload.tenant_id)
     normalized_service_ref = _normalize_text(payload.service_ref)
+    normalized_service_id = _normalize_text(payload.service_id)
     normalized_owner_ref = _normalize_text(payload.owner_ref)
     normalized_duration = _coerce_int(payload.duration_minutes, 30, 5, 240)
     normalized_limit = _coerce_int(payload.limit, 6, 1, 10)
@@ -207,6 +215,7 @@ async def appointment_availability(
         "timezone": normalized_timezone,
         "duration_minutes": normalized_duration,
         "limit": normalized_limit,
+        "service_id": normalized_service_id,
         "service_ref": normalized_service_ref,
         "owner_ref": normalized_owner_ref,
         "contact": normalized_contact if normalized_contact is not None else None,

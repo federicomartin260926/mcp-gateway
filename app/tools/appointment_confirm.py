@@ -28,6 +28,7 @@ class AppointmentConfirmInput(BaseModel):
     start_at: str | None = None
     end_at: str | None = None
     timezone: str | None = "Europe/Madrid"
+    service_id: str | None = None
     service_ref: str | None = None
     owner_ref: str | None = None
     contact: AppointmentConfirmContactInput | None = None
@@ -111,6 +112,7 @@ async def appointment_confirm(
     start_at: str | None = None,
     end_at: str | None = None,
     timezone: str | None = "Europe/Madrid",
+    service_id: str | None = None,
     service_ref: str | None = None,
     owner_ref: str | None = None,
     contact: AppointmentConfirmContactInput | dict[str, Any] | None = None,
@@ -120,12 +122,18 @@ async def appointment_confirm(
     entrypoint_ref: str | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
+    """Confirm an appointment through n8n for a tenant, contact and selected slot.
+
+    Prefer `service_id` with the canonical UUID returned by `services_search`.
+    Use `service_ref` only as a fallback with slug, integration key or external reference.
+    """
     try:
         payload = AppointmentConfirmInput(
             tenant_id=tenant_id,
             start_at=start_at,
             end_at=end_at,
             timezone=timezone,
+            service_id=service_id,
             service_ref=service_ref,
             owner_ref=owner_ref,
             contact=contact,
@@ -147,6 +155,7 @@ async def appointment_confirm(
     normalized_start_at = normalize_text(payload.start_at)
     normalized_end_at = normalize_text(payload.end_at)
     normalized_timezone = normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_service_id = normalize_text(payload.service_id)
     normalized_service_ref = normalize_text(payload.service_ref)
     normalized_owner_ref = normalize_text(payload.owner_ref)
     normalized_contact = _normalize_contact(payload.contact)
@@ -170,6 +179,7 @@ async def appointment_confirm(
         "tenant_id": normalized_tenant_id,
         "slot": _build_slot(normalized_start_at, normalized_end_at, normalized_owner_ref),
         "timezone": normalized_timezone,
+        "service_id": normalized_service_id,
         "service_ref": normalized_service_ref,
         "contact": normalized_contact,
         "title": normalized_title,

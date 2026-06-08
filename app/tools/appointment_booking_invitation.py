@@ -27,6 +27,7 @@ class AppointmentBookingInvitationInput(BaseModel):
     tenant_id: str | None = None
     contact: AppointmentBookingInvitationContactInput | None = None
     timezone: str | None = "Europe/Madrid"
+    service_id: str | None = None
     service_ref: str | None = None
     owner_ref: str | None = None
     date_from: str | None = None
@@ -96,6 +97,7 @@ async def appointment_booking_invitation(
     tenant_id: str | None = None,
     contact: AppointmentBookingInvitationContactInput | dict[str, Any] | None = None,
     timezone: str | None = "Europe/Madrid",
+    service_id: str | None = None,
     service_ref: str | None = None,
     owner_ref: str | None = None,
     date_from: str | None = None,
@@ -106,11 +108,17 @@ async def appointment_booking_invitation(
     entrypoint_ref: str | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
+    """Create a booking invitation link through n8n.
+
+    Prefer `service_id` with the canonical UUID returned by `services_search`.
+    Use `service_ref` only as a fallback with slug, integration key or external reference.
+    """
     try:
         payload = AppointmentBookingInvitationInput(
             tenant_id=tenant_id,
             contact=contact,
             timezone=timezone,
+            service_id=service_id,
             service_ref=service_ref,
             owner_ref=owner_ref,
             date_from=date_from,
@@ -131,6 +139,7 @@ async def appointment_booking_invitation(
 
     normalized_tenant_id = normalize_text(payload.tenant_id)
     normalized_timezone = normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_service_id = normalize_text(payload.service_id)
     normalized_service_ref = normalize_text(payload.service_ref)
     normalized_owner_ref = normalize_text(payload.owner_ref)
     normalized_date_from = normalize_text(payload.date_from)
@@ -154,6 +163,7 @@ async def appointment_booking_invitation(
         "tenant_id": normalized_tenant_id,
         "contact": normalized_contact,
         "timezone": normalized_timezone,
+        "service_id": normalized_service_id,
         "service_ref": normalized_service_ref,
         "owner_ref": normalized_owner_ref,
         "date_from": normalized_date_from,
