@@ -512,6 +512,8 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
                     "ownersCount": 3,
                     "totalSlots": 6,
                     "returnedSlots": 6,
+                    "truncated": False,
+                    "serviceId": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
                     "preferredOwnerId": None,
                     "preferredOwnerName": None,
                 },
@@ -535,9 +537,9 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         date_to="2026-05-15",
         timezone="  ",
         duration_minutes=30,
-        limit=6,
+        limit=100,
         service_id="019e8ce0-0864-7720-af82-a5c98df2d2dd",
-        service_ref="null",
+        service_ref="maria-laser-axilas",
         owner_ref="",
         contact={
             "phone": " +34611949358 ",
@@ -560,9 +562,9 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         "date_to": "2026-05-15",
         "timezone": "Europe/Madrid",
         "duration_minutes": 30,
-        "limit": 6,
+        "limit": 100,
         "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
-        "service_ref": None,
+        "service_ref": "maria-laser-axilas",
         "owner_ref": None,
         "contact": {
             "phone": "+34611949358",
@@ -576,6 +578,92 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
     assert payload["timezone"] == "Europe/Madrid"
     assert payload["slots"][0]["owner"]["name"] == "Carla"
     assert payload["message"].startswith("Hay 6")
+    assert payload["raw_summary"]["totalSlots"] == 6
+    assert payload["raw_summary"]["returnedSlots"] == 1
+    assert payload["raw_summary"]["truncated"] is True
+    assert payload["raw_summary"]["serviceId"] == "019e8ce0-0864-7720-af82-a5c98df2d2dd"
+
+
+@pytest.mark.asyncio
+async def test_appointment_availability_marks_truncation_when_more_slots_exist(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "available": True,
+                "timezone": "Europe/Madrid",
+                "slots": [
+                    {
+                        "start": "2026-06-10T09:00:00+02:00",
+                        "end": "2026-06-10T09:15:00+02:00",
+                        "label": None,
+                        "owner": {
+                            "id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
+                            "name": "Carla",
+                            "email": "agente@gmail.com",
+                            "preferred": False,
+                        },
+                    },
+                    {
+                        "start": "2026-06-10T12:00:00+02:00",
+                        "end": "2026-06-10T12:15:00+02:00",
+                        "label": None,
+                        "owner": {
+                            "id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
+                            "name": "Carla",
+                            "email": "agente@gmail.com",
+                            "preferred": False,
+                        },
+                    },
+                ],
+                "message": "Hay 2 hueco(s) disponible(s) de 12 encontrados.",
+                "raw_summary": {
+                    "mode": "multi_owner",
+                    "durationMinutes": 15,
+                    "ownersCount": 2,
+                    "totalSlots": 12,
+                    "returnedSlots": 2,
+                    "truncated": True,
+                    "preferredOwnerId": None,
+                    "preferredOwnerName": None,
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        appointment_availability_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_AVAILABILITY_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            APPOINTMENT_AVAILABILITY_TIMEOUT_SECONDS=9,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_availability(
+        date_from="2026-06-10T14:00:00+02:00",
+        date_to="2026-06-10T21:00:00+02:00",
+        timezone="Europe/Madrid",
+        duration_minutes=15,
+        limit=100,
+        service_id="019e8ce0-0864-7720-af82-a5c98df2d2dd",
+        service_ref="maria-laser-axilas",
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+    )
+
+    assert captured["json"]["limit"] == 100
+    assert payload["ok"] is True
+    assert payload["available"] is True
+    assert payload["raw_summary"]["totalSlots"] == 12
+    assert payload["raw_summary"]["returnedSlots"] == 2
+    assert payload["raw_summary"]["truncated"] is True
+    assert payload["raw_summary"]["serviceId"] == "019e8ce0-0864-7720-af82-a5c98df2d2dd"
 
 
 @pytest.mark.asyncio

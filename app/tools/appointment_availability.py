@@ -81,7 +81,7 @@ class AppointmentAvailabilityInput(BaseModel):
     date_to: str | None = None
     timezone: str | None = "Europe/Madrid"
     duration_minutes: int | None = 30
-    limit: int | None = 6
+    limit: int | None = 50
     service_id: str | None = None
     service_ref: str | None = None
     owner_ref: str | None = None
@@ -99,7 +99,13 @@ def _empty_payload(timezone: str, message: str, error_code: str) -> dict[str, An
     }
 
 
-def _normalize_success_payload(payload: Any, fallback_timezone: str) -> dict[str, Any]:
+def _normalize_success_payload(
+    payload: Any,
+    fallback_timezone: str,
+    requested_limit: int | None = None,
+    requested_service_id: str | None = None,
+    requested_service_ref: str | None = None,
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _empty_payload(fallback_timezone, "Invalid response from appointment availability service.", "upstream_error")
 
@@ -111,15 +117,37 @@ def _normalize_success_payload(payload: Any, fallback_timezone: str) -> dict[str
 
     timezone = cleaned.get("timezone") if isinstance(cleaned.get("timezone"), str) and cleaned.get("timezone").strip() else fallback_timezone
     slots = cleaned.get("slots") if isinstance(cleaned.get("slots"), list) else []
+    if requested_limit is not None:
+        slots = slots[:requested_limit]
     message = cleaned.get("message") if isinstance(cleaned.get("message"), str) and cleaned.get("message").strip() else "Appointment availability retrieved."
+    raw_summary = cleaned.get("raw_summary") if isinstance(cleaned.get("raw_summary"), dict) else {}
+    raw_total_slots = _coerce_int(raw_summary.get("totalSlots"), len(slots), 0, 1_000_000)
+
+    returned_slots = len(slots)
+    truncated = raw_total_slots > returned_slots
 
     normalized = {
         "ok": _coerce_bool(cleaned.get("ok"), default=True),
-        "available": _coerce_bool(cleaned.get("available"), default=False),
+        "available": _coerce_bool(cleaned.get("available"), default=raw_total_slots > 0),
         "timezone": timezone,
         "slots": slots,
         "message": message,
-        "raw_summary": cleaned.get("raw_summary") if isinstance(cleaned.get("raw_summary"), dict) else {},
+        "raw_summary": {
+            **raw_summary,
+            "mode": raw_summary.get("mode") if raw_summary.get("mode") is not None else cleaned.get("mode"),
+            "durationMinutes": raw_summary.get("durationMinutes")
+            if raw_summary.get("durationMinutes") is not None
+            else cleaned.get("durationMinutes"),
+            "ownersCount": raw_summary.get("ownersCount")
+            if raw_summary.get("ownersCount") is not None
+            else cleaned.get("ownersCount"),
+            "totalSlots": raw_total_slots,
+            "returnedSlots": returned_slots,
+            "truncated": truncated,
+            "serviceId": raw_summary.get("serviceId") if raw_summary.get("serviceId") is not None else requested_service_id,
+            "serviceRef": raw_summary.get("serviceRef") if raw_summary.get("serviceRef") is not None else requested_service_ref,
+            "requestedLimit": requested_limit,
+        },
     }
     if "error_code" in cleaned:
         normalized["error_code"] = cleaned["error_code"]
@@ -149,7 +177,7 @@ async def appointment_availability(
     date_to: str | None = None,
     timezone: str | None = "Europe/Madrid",
     duration_minutes: int | None = 30,
-    limit: int | None = 6,
+    limit: int | None = 50,
     service_id: str | None = None,
     service_ref: str | None = None,
     owner_ref: str | None = None,
@@ -188,7 +216,7 @@ async def appointment_availability(
     normalized_service_id = _normalize_text(payload.service_id)
     normalized_owner_ref = _normalize_text(payload.owner_ref)
     normalized_duration = _coerce_int(payload.duration_minutes, 30, 5, 240)
-    normalized_limit = _coerce_int(payload.limit, 6, 1, 10)
+    normalized_limit = _coerce_int(payload.limit, 50, 1, 150)
     normalized_contact = payload.contact.model_dump() if isinstance(payload.contact, AppointmentAvailabilityContactInput) else payload.contact
     if isinstance(normalized_contact, dict):
         normalized_contact = {key: _normalize_text(value) for key, value in normalized_contact.items()}
@@ -240,4 +268,10 @@ async def appointment_availability(
         logger.exception("Unexpected error while retrieving appointment availability")
         return _empty_payload(normalized_timezone, "Appointment availability service is unavailable.", "upstream_error")
 
-    return _normalize_success_payload(upstream_payload, normalized_timezone)
+    return _normalize_success_payload(
+        upstream_payload,
+        normalized_timezone,
+        requested_limit=normalized_limit,
+        requested_service_id=normalized_service_id,
+        requested_service_ref=normalized_service_ref,
+    )
