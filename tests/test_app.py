@@ -16,6 +16,7 @@ from app.tools.appointment_availability import appointment_availability
 from app.tools.appointment_confirm import appointment_confirm
 from app.tools.appointment_reschedule import appointment_reschedule
 from app.tools.contact_context import contact_context
+from app.tools.crm_contact_submit import crm_contact_submit
 from app.tools.handoff_request import handoff_request
 from app.tools.contact_context_mock import contact_context_mock
 from app.tools.echo import echo
@@ -28,6 +29,7 @@ appointment_availability_module = importlib.import_module("app.tools.appointment
 appointment_confirm_module = importlib.import_module("app.tools.appointment_confirm")
 appointment_reschedule_module = importlib.import_module("app.tools.appointment_reschedule")
 contact_context_module = importlib.import_module("app.tools.contact_context")
+crm_contact_submit_module = importlib.import_module("app.tools.crm_contact_submit")
 handoff_request_module = importlib.import_module("app.tools.handoff_request")
 services_search_module = importlib.import_module("app.tools.services_search")
 appointment_common_module = importlib.import_module("app.tools._appointment_common")
@@ -93,6 +95,7 @@ def test_info_endpoint_lists_tools():
     assert "echo" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context_mock" in [tool["name"] for tool in payload["available_tools"]]
     assert "contact_context" in [tool["name"] for tool in payload["available_tools"]]
+    assert "crm_contact_submit" in [tool["name"] for tool in payload["available_tools"]]
     assert "appointment_availability" in [tool["name"] for tool in payload["available_tools"]]
     assert "appointment_events" in [tool["name"] for tool in payload["available_tools"]]
     assert "appointment_confirm" in [tool["name"] for tool in payload["available_tools"]]
@@ -151,6 +154,7 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "echo" in [tool["name"] for tool in tools]
         assert "contact_context_mock" in [tool["name"] for tool in tools]
         assert "contact_context" in [tool["name"] for tool in tools]
+        assert "crm_contact_submit" in [tool["name"] for tool in tools]
         assert "appointment_availability" in [tool["name"] for tool in tools]
         assert "appointment_events" in [tool["name"] for tool in tools]
         assert "appointment_confirm" in [tool["name"] for tool in tools]
@@ -763,6 +767,246 @@ async def test_contact_context_timeout_returns_timeout_error(monkeypatch):
 
     assert payload["found"] is False
     assert payload["error_code"] == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_crm_contact_submit_without_webhook_returns_not_configured(monkeypatch):
+    monkeypatch.setattr(
+        crm_contact_submit_module,
+        "get_settings",
+        lambda: Settings(CRM_CONTACT_SUBMIT_WEBHOOK_URL=""),
+    )
+
+    payload = await crm_contact_submit(contact={"phone": "+34123456789"})
+
+    assert payload["ok"] is False
+    assert payload["submitted"] is False
+    assert payload["status"] == "not_configured"
+    assert payload["message"] == "CRM contact submit webhook is not configured."
+    assert payload["crm_result"] is None
+
+
+@pytest.mark.asyncio
+async def test_crm_contact_submit_without_phone_or_email_returns_validation_error(monkeypatch):
+    monkeypatch.setattr(
+        crm_contact_submit_module,
+        "get_settings",
+        lambda: Settings(CRM_CONTACT_SUBMIT_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+
+    payload = await crm_contact_submit(
+        contact={"name": "Cliente Demo"},
+        source="whatsapp",
+    )
+
+    assert payload["ok"] is False
+    assert payload["submitted"] is False
+    assert payload["status"] == "validation_error"
+    assert payload["crm_result"] is None
+
+
+@pytest.mark.asyncio
+async def test_crm_contact_submit_posts_expected_payload_and_returns_crm_result(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "submitted": True,
+                "status": "customer_updated",
+                "message": "CRM contact context submitted.",
+                "crm_result": {
+                    "ok": True,
+                    "status": "customer_updated",
+                    "decision": "customer_updated",
+                    "contactType": "customer",
+                    "contactId": "crm-contact-1",
+                    "activityCreated": True,
+                    "summaryStored": True,
+                    "warnings": [],
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        crm_contact_submit_module,
+        "get_settings",
+        lambda: Settings(
+            CRM_CONTACT_SUBMIT_WEBHOOK_URL="https://n8n.example/webhook",
+            CRM_CONTACT_SUBMIT_WEBHOOK_TOKEN="crm-secret-token",
+            CRM_CONTACT_SUBMIT_TIMEOUT_SECONDS=11,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await crm_contact_submit(
+        contact={
+            "name": "Luis Lopez",
+            "phone": " +34617214814 ",
+            "email": "null",
+            "whatsapp_name": " Luis ",
+        },
+        source="whatsapp",
+        channel="whatsapp",
+        external_conversation_id=" whatsapp:+34617214814 ",
+        entry_point_ref=" wa-mary-main ",
+        qualification={
+            "is_qualified": True,
+            "service_interest": " Depilación láser axilas ",
+            "need": " Quiere información y disponibilidad ",
+            "urgency": " medium ",
+            "preferred_date": None,
+            "preferred_time": " afternoon ",
+        },
+        conversation={
+            "summary": " El contacto preguntó por depilación láser de axilas y disponibilidad por la tarde. ",
+            "last_message": " ¿Tenéis hueco por la tarde? ",
+            "intent": " booking_interest ",
+            "needs_human": False,
+            "finished": False,
+        },
+        actions={
+            "booking_requested": True,
+            "handoff_requested": False,
+            "waitlist_requested": False,
+        },
+        metadata={
+            "origin": "sales_agent",
+            "sa_conversation_id": " 019... ",
+            "service_slug": " laser-axilas ",
+            "service_integration_key": None,
+            "product_id": None,
+            "utm_source": None,
+            "utm_medium": None,
+            "utm_campaign": None,
+            "utm_content": None,
+            "utm_term": None,
+        },
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+    )
+
+    assert captured["url"] == "https://n8n.example/webhook"
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer crm-secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
+    }
+    assert captured["json"] == {
+        "event": "sales_agent.crm_contact_submit",
+        "tool": "crm_contact_submit",
+        "source": "mcp-gateway",
+        "channel": "whatsapp",
+        "contact": {
+            "name": "Luis Lopez",
+            "phone": "+34617214814",
+            "email": None,
+            "whatsapp_name": "Luis",
+        },
+        "crm_payload": {
+            "source": "whatsapp",
+            "channel": "whatsapp",
+            "externalConversationId": "whatsapp:+34617214814",
+            "entryPointRef": "wa-mary-main",
+            "contact": {
+                "name": "Luis Lopez",
+                "phone": "+34617214814",
+                "email": None,
+                "whatsappName": "Luis",
+            },
+            "qualification": {
+                "isQualified": True,
+                "serviceInterest": "Depilación láser axilas",
+                "need": "Quiere información y disponibilidad",
+                "urgency": "medium",
+                "preferredDate": None,
+                "preferredTime": "afternoon",
+            },
+            "conversation": {
+                "summary": "El contacto preguntó por depilación láser de axilas y disponibilidad por la tarde.",
+                "lastMessage": "¿Tenéis hueco por la tarde?",
+                "intent": "booking_interest",
+                "needsHuman": False,
+                "finished": False,
+            },
+            "actions": {
+                "bookingRequested": True,
+                "handoffRequested": False,
+                "waitlistRequested": False,
+            },
+            "metadata": {
+                "origin": "sales_agent",
+                "saConversationId": "019...",
+                "serviceSlug": "laser-axilas",
+                "serviceIntegrationKey": None,
+                "productId": None,
+                "utmSource": None,
+                "utmMedium": None,
+                "utmCampaign": None,
+                "utmContent": None,
+                "utmTerm": None,
+            },
+        },
+    }
+    assert payload["ok"] is True
+    assert payload["submitted"] is True
+    assert payload["status"] == "accepted"
+    assert payload["message"] == "CRM contact context submitted."
+    assert payload["crm_result"]["decision"] == "customer_updated"
+    assert payload["crm_result"]["contactType"] == "customer"
+    assert payload["crm_result"]["contactId"] == "crm-contact-1"
+    assert "TEST_DOWNSTREAM_TOKEN_123456" not in str(captured["json"])
+    assert "crm-secret-token" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_crm_contact_submit_logs_safe_metadata(monkeypatch, caplog):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "submitted": True,
+                "status": "accepted",
+                "message": "CRM contact context submitted.",
+                "crm_result": {"ok": True, "status": "accepted", "warnings": []},
+            },
+        )
+
+    monkeypatch.setattr(
+        crm_contact_submit_module,
+        "get_settings",
+        lambda: Settings(
+            CRM_CONTACT_SUBMIT_WEBHOOK_URL="https://n8n.example/webhook",
+            CRM_CONTACT_SUBMIT_WEBHOOK_TOKEN="crm-secret-token",
+            CRM_CONTACT_SUBMIT_TIMEOUT_SECONDS=11,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    with caplog.at_level("INFO"):
+        payload = await crm_contact_submit(
+            contact={"phone": "+34123456789"},
+            source="whatsapp",
+            ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+        )
+
+    log_text = "\n".join(record.message for record in caplog.records)
+    assert "service_auth_source=crm_contact_submit_webhook_token" in log_text
+    assert "downstream_authorization_present=True" in log_text
+    assert "TEST_DOWNSTREAM_TOKEN_123456" not in log_text
+    assert "crm-secret-token" not in log_text
+    assert payload["status"] == "accepted"
+    assert captured["headers"]["Authorization"] == "Bearer crm-secret-token"
 
 
 @pytest.mark.asyncio

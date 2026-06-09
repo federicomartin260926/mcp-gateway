@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     handoff_request_webhook_url: str = Field(default="", alias="HANDOFF_REQUEST_WEBHOOK_URL")
     handoff_request_webhook_token: str = Field(default="", alias="HANDOFF_REQUEST_WEBHOOK_TOKEN")
     handoff_request_timeout_seconds: float = Field(default=8, alias="HANDOFF_REQUEST_TIMEOUT_SECONDS")
+    crm_contact_submit_webhook_url: str = Field(default="", alias="CRM_CONTACT_SUBMIT_WEBHOOK_URL")
+    crm_contact_submit_webhook_token: str = Field(default="", alias="CRM_CONTACT_SUBMIT_WEBHOOK_TOKEN")
+    crm_contact_submit_timeout_seconds: float = Field(default=8, alias="CRM_CONTACT_SUBMIT_TIMEOUT_SECONDS")
 
 
 @lru_cache

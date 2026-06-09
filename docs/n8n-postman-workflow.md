@@ -126,6 +126,7 @@ Antes de pasar a producción en n8n:
 - `SA Appointment Events`
 - `SA Appointment Cancel`
 - `SA Appointment Reschedule`
+- `SA CRM Contact Submit`
 
 ### Webhook paths
 
@@ -135,6 +136,7 @@ Antes de pasar a producción en n8n:
 - `sa-appointment-events`
 - `sa-appointment-cancel`
 - `sa-appointment-reschedule`
+- `sa-crm-contact-submit`
 
 ## Estructura recomendada de cada workflow
 
@@ -219,6 +221,7 @@ El flujo de agenda va así:
 - `appointment_availability` ya validado.
 - `appointment_confirm` ya validado en n8n.
 - `appointment_events`, `appointment_cancel` y `appointment_reschedule` preparados como workflows importables.
+- `crm_contact_submit` preparado como workflow importable para enviar contexto comercial a CRM.
 - La colección Postman asociada está actualizada para seguir validando los webhooks antes de exponer la tool MCP final.
 
 ## Prompt template para ChatGPT

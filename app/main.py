@@ -25,6 +25,7 @@ from app.tools import (
     echo,
     services_search,
     handoff_request,
+    crm_contact_submit,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ def build_mcp_server(enable_debug_tools: bool = False) -> FastMCP:
     mcp.tool()(appointment_booking_invitation)
     mcp.tool()(services_search)
     mcp.tool()(handoff_request)
+    mcp.tool()(crm_contact_submit)
     if enable_debug_tools:
         mcp.tool()(debug_auth_context)
     return mcp

@@ -19,10 +19,12 @@ Servidor MCP remoto base para validar herramientas nativas con OpenAI Responses 
   - `appointment_booking_invitation`
   - `services_search`
   - `handoff_request`
+  - `crm_contact_submit`
 - Incluye la tool real `contact_context`, delegada a un webhook n8n configurable.
 - Incluye la tool real `appointment_availability`, delegada a un webhook n8n configurable para disponibilidad de citas.
 - Incluye la tool real `services_search`, delegada a un webhook n8n configurable para buscar productos y servicios del CRM.
 - Incluye la tool real `handoff_request`, delegada a un webhook n8n configurable para registrar handoffs operativos inferidos por el LLM.
+- Incluye la tool real `crm_contact_submit`, delegada a un webhook n8n configurable para enviar contexto comercial al CRM y dejar que CRM decida si crea o actualiza lead, customer o nota.
 - Incluye una tool temporal de debug, `debug_auth_context`, habilitable con `MCP_ENABLE_DEBUG_TOOLS=true`, para validar de forma segura si llega `Authorization` desde OpenAI Responses API.
 - Añade autenticación Bearer opcional por variable de entorno.
 - Permite controlar el `Host` aceptado en `/mcp` por variable de entorno.
@@ -50,6 +52,7 @@ La guía operativa completa está en [docs/n8n-postman-workflow.md](docs/n8n-pos
 - `services_search` ya validado.
 - `appointment_confirm`, `appointment_reschedule`, `appointment_cancel` y `appointment_booking_invitation` expuestos como tools MCP.
 - `handoff_request` expuesta como tool MCP para handoffs inferidos por LLM.
+- `crm_contact_submit` expuesta como tool MCP para enviar contexto comercial a CRM.
 
 ## Downstream authorization
 
@@ -58,6 +61,164 @@ Cuando OpenAI Responses API entrega `Authorization` al endpoint MCP, `mcp-gatewa
 n8n toma ese header y lo usa como `Authorization` hacia CRM cuando está presente. Si no llega, los workflows conservan el token CRM por defecto que ya tenían configurado.
 
 Los exports de respaldo del workflow n8n activo se guardan en [docs/n8n-backups/](docs/n8n-backups/).
+
+## CRM contact submit
+
+Variables de entorno:
+
+- `CRM_CONTACT_SUBMIT_WEBHOOK_URL`
+- `CRM_CONTACT_SUBMIT_WEBHOOK_TOKEN`
+- `CRM_CONTACT_SUBMIT_TIMEOUT_SECONDS`
+
+La tool `crm_contact_submit` envía contexto comercial de una conversación o contacto a un webhook n8n, y n8n solo debe reenviar `crm_payload` al endpoint genérico de CRM.
+CRM resuelve el tenant por su token de integración y decide si crea o actualiza lead, customer y/o nota interna.
+Si `CRM_CONTACT_SUBMIT_WEBHOOK_URL` no está configurada, la tool devuelve `status: "not_configured"` y no llama al upstream.
+Si `CRM_CONTACT_SUBMIT_WEBHOOK_TOKEN` está vacío, la tool usa `N8N_WEBHOOK_BEARER_TOKEN` como token de servicio.
+Si ambos tokens están vacíos, el webhook n8n queda sin auth técnica y la tool sigue funcionando solo si ese endpoint la acepta.
+Si la request MCP original llevaba `Authorization`, también se reenvía a n8n como `X-Downstream-Authorization`.
+
+### Input
+
+```json
+{
+  "contact": {
+    "name": "Luis Lopez",
+    "phone": "+34617214814",
+    "email": null,
+    "whatsapp_name": "Luis"
+  },
+  "source": "whatsapp",
+  "channel": "whatsapp",
+  "external_conversation_id": "whatsapp:+34617214814",
+  "entry_point_ref": "wa-mary-main",
+  "qualification": {
+    "is_qualified": true,
+    "service_interest": "Depilación láser axilas",
+    "need": "Quiere información y disponibilidad",
+    "urgency": "medium",
+    "preferred_date": null,
+    "preferred_time": "afternoon"
+  },
+  "conversation": {
+    "summary": "El contacto preguntó por depilación láser de axilas y disponibilidad por la tarde.",
+    "last_message": "¿Tenéis hueco por la tarde?",
+    "intent": "booking_interest",
+    "needs_human": false,
+    "finished": false
+  },
+  "actions": {
+    "booking_requested": true,
+    "handoff_requested": false,
+    "waitlist_requested": false
+  },
+  "metadata": {
+    "origin": "sales_agent",
+    "sa_conversation_id": "019...",
+    "service_slug": "laser-axilas",
+    "service_integration_key": null,
+    "product_id": null,
+    "utm_source": null,
+    "utm_medium": null,
+    "utm_campaign": null,
+    "utm_content": null,
+    "utm_term": null
+  }
+}
+```
+
+### Reglas
+
+- `contact` es obligatorio
+- exige al menos `contact.phone` o `contact.email`
+- normaliza strings vacíos, `"null"` y `"undefined"` a `null`
+- convierte el payload enviado a n8n a `crm_payload` en camelCase
+- envía `Authorization: Bearer <CRM_CONTACT_SUBMIT_WEBHOOK_TOKEN>` si existe; en caso contrario usa `N8N_WEBHOOK_BEARER_TOKEN`
+- si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
+- usa `CRM_CONTACT_SUBMIT_TIMEOUT_SECONDS` con valor por defecto `8`
+
+### Payload enviado a n8n
+
+```json
+{
+  "event": "sales_agent.crm_contact_submit",
+  "tool": "crm_contact_submit",
+  "source": "mcp-gateway",
+  "channel": "whatsapp",
+  "contact": {
+    "name": "Luis Lopez",
+    "phone": "+34617214814",
+    "email": null,
+    "whatsapp_name": "Luis"
+  },
+  "crm_payload": {
+    "source": "whatsapp",
+    "channel": "whatsapp",
+    "externalConversationId": "whatsapp:+34617214814",
+    "entryPointRef": "wa-mary-main",
+    "contact": {
+      "name": "Luis Lopez",
+      "phone": "+34617214814",
+      "email": null,
+      "whatsappName": "Luis"
+    },
+    "qualification": {
+      "isQualified": true,
+      "serviceInterest": "Depilación láser axilas",
+      "need": "Quiere información y disponibilidad",
+      "urgency": "medium",
+      "preferredDate": null,
+      "preferredTime": "afternoon"
+    },
+    "conversation": {
+      "summary": "El contacto preguntó por depilación láser de axilas y disponibilidad por la tarde.",
+      "lastMessage": "¿Tenéis hueco por la tarde?",
+      "intent": "booking_interest",
+      "needsHuman": false,
+      "finished": false
+    },
+    "actions": {
+      "bookingRequested": true,
+      "handoffRequested": false,
+      "waitlistRequested": false
+    },
+    "metadata": {
+      "origin": "sales_agent",
+      "saConversationId": "019...",
+      "serviceSlug": "laser-axilas",
+      "serviceIntegrationKey": null,
+      "productId": null,
+      "utmSource": null,
+      "utmMedium": null,
+      "utmCampaign": null,
+      "utmContent": null,
+      "utmTerm": null
+    }
+  }
+}
+```
+
+### Output esperado
+
+```json
+{
+  "ok": true,
+  "submitted": true,
+  "status": "accepted",
+  "message": "CRM contact context submitted.",
+  "crm_result": {
+    "ok": true,
+    "status": "customer_updated",
+    "decision": "customer_updated",
+    "contactType": "customer",
+    "contactId": "crm-contact-1",
+    "activityCreated": true,
+    "summaryStored": true,
+    "warnings": []
+  }
+}
+```
+
+Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `submitted: false`, un `status` controlado y un `message` útil. Si n8n devuelve error explícito, se expone también `error` sin tokens ni headers sensibles.
 
 ## Endpoints
 
@@ -591,6 +752,7 @@ Si hay error de configuración, validación o upstream, la tool devuelve `ok: fa
 - `appointment_availability`
 - `services_search`
 - `handoff_request`
+- `crm_contact_submit`
 
 ### `echo`
 
@@ -636,7 +798,7 @@ Configura la `ExternalTool` MCP remota en `sales-agent` con algo como:
 - `provider`: `openai_remote_mcp`
 - `server_label`: `tech_investments_mcp`
 - `server_url`: `https://lavish-supply-custodian.ngrok-free.dev/mcp`
-- `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability", "services_search", "handoff_request"]`
+- `allowed_tools`: `["echo", "contact_context_mock", "contact_context", "appointment_availability", "services_search", "handoff_request", "crm_contact_submit"]`
 
 Si tu cliente MCP necesita la ruta explícita, usa el endpoint `/mcp`.
 
