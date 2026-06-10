@@ -72,15 +72,10 @@ class ContactContextInput(BaseModel):
 
 def _empty_contact_payload(summary: str, error_code: str) -> dict[str, Any]:
     return {
+        "ok": False,
+        "status": error_code,
         "found": False,
-        "contact": {
-            "name": None,
-            "type": "unknown",
-            "status": None,
-            "stage": None,
-            "owner": None,
-            "last_interaction": None,
-        },
+        "contact": {"found": False},
         "appointments": {
             "next": None,
             "items": [],
@@ -91,13 +86,32 @@ def _empty_contact_payload(summary: str, error_code: str) -> dict[str, Any]:
             "needs_human": False,
             "do_not_contact": False,
         },
+        "message": summary,
         "summary": summary,
         "error_code": error_code,
     }
 
 
+def _optional_normalized_value(value: Any) -> Any:
+    if value is None:
+        return None
+
+    return _normalize_value(value)
+
+
+def _coerce_branches(payload: dict[str, Any]) -> list[Any]:
+    branches = payload.get("branches")
+    if not isinstance(branches, list):
+        return []
+
+    normalized_branches = _normalize_value(branches)
+    return normalized_branches if isinstance(normalized_branches, list) else []
+
+
 def _coerce_contact(payload: dict[str, Any]) -> dict[str, Any]:
     contact = payload.get("contact")
+    if contact is None:
+        return {"found": False}
     if not isinstance(contact, dict):
         contact = {}
 
@@ -105,22 +119,55 @@ def _coerce_contact(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(legacy_contact, dict):
         legacy_contact = payload.get("customer") if isinstance(payload.get("customer"), dict) else {}
 
-    merged_contact = {
-        "name": _first_non_null(contact.get("name"), legacy_contact.get("name")),
-        "type": contact.get("type"),
-        "status": _first_non_null(contact.get("status"), legacy_contact.get("status")),
-        "stage": _first_non_null(contact.get("stage"), legacy_contact.get("stage")),
-        "owner": _first_non_null(contact.get("owner"), legacy_contact.get("owner")),
-        "last_interaction": _first_non_null(contact.get("last_interaction"), legacy_contact.get("last_interaction")),
-    }
+    merged_contact = _normalize_value(contact)
+    if not isinstance(merged_contact, dict):
+        merged_contact = {}
 
-    if merged_contact["type"] is None:
+    if merged_contact.get("name") is None:
+        merged_contact["name"] = _first_non_null(contact.get("name"), legacy_contact.get("name"))
+
+    if merged_contact.get("type") is None:
         if isinstance(payload.get("customer"), dict) or payload.get("customer") is True:
             merged_contact["type"] = "customer"
         elif isinstance(payload.get("lead"), dict) or payload.get("lead") is True:
             merged_contact["type"] = "lead"
         else:
             merged_contact["type"] = "unknown"
+    if merged_contact.get("status") is None:
+        merged_contact["status"] = _first_non_null(contact.get("status"), legacy_contact.get("status"))
+    if merged_contact.get("stage") is None:
+        merged_contact["stage"] = _first_non_null(contact.get("stage"), legacy_contact.get("stage"))
+    if merged_contact.get("owner") is None:
+        merged_contact["owner"] = _first_non_null(contact.get("owner"), legacy_contact.get("owner"))
+    if merged_contact.get("last_interaction") is None:
+        merged_contact["last_interaction"] = _first_non_null(contact.get("last_interaction"), legacy_contact.get("last_interaction"))
+
+    contact_id = _first_non_null(
+        merged_contact.get("id"),
+        merged_contact.get("contact_id"),
+        merged_contact.get("contactId"),
+        contact.get("id"),
+        contact.get("contact_id"),
+        contact.get("contactId"),
+        legacy_contact.get("id"),
+        legacy_contact.get("contact_id"),
+        legacy_contact.get("contactId"),
+    )
+    if contact_id is not None:
+        merged_contact["id"] = contact_id
+
+    last_branch = _first_non_null(
+        merged_contact.get("last_branch"),
+        merged_contact.get("lastBranch"),
+        contact.get("last_branch"),
+        contact.get("lastBranch"),
+        legacy_contact.get("last_branch"),
+        legacy_contact.get("lastBranch"),
+    )
+    if last_branch is not None:
+        merged_contact["last_branch"] = last_branch
+
+    merged_contact["found"] = True
 
     return merged_contact
 
@@ -154,14 +201,42 @@ def _coerce_flags(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_business_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    timezone = payload.get("timezone")
+    timezone_source = payload.get("timezone_source")
+    branch = _optional_normalized_value(payload.get("branch"))
+    branches = _coerce_branches(payload)
+    needs_branch_selection = _coerce_bool(payload.get("needs_branch_selection"), default=False)
+
+    if (
+        timezone is None
+        and timezone_source is None
+        and branch is None
+        and not branches
+        and not needs_branch_selection
+    ):
+        return None
+
+    return {
+        "timezone": timezone,
+        "timezone_source": timezone_source,
+        "branch": branch,
+        "branches": branches,
+        "needs_branch_selection": needs_branch_selection,
+    }
+
+
 def _normalize_success_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _empty_contact_payload("Invalid response from contact context service.", "upstream_error")
 
     cleaned = _normalize_value(payload)
+    contact = _coerce_contact(cleaned)
+    found = bool(contact.get("found"))
+    ok = _coerce_bool(cleaned.get("ok"), default=True)
+    status = cleaned.get("status")
     summary = cleaned.get("summary")
     if not isinstance(summary, str) or not summary.strip():
-        contact = _coerce_contact(cleaned)
         contact_name = contact.get("name") or "Unknown contact"
         status = contact.get("status")
         if status:
@@ -170,14 +245,27 @@ def _normalize_success_payload(payload: Any) -> dict[str, Any]:
             summary = f"Contact context found for {contact_name}."
 
     normalized = {
-        "found": _coerce_bool(cleaned.get("found"), default=True),
-        "contact": _coerce_contact(cleaned),
+        "ok": ok,
+        "status": status if isinstance(status, str) and status.strip() else ("ok" if ok else "upstream_error"),
+        "found": found,
+        "tenant": _optional_normalized_value(cleaned.get("tenant")),
+        "contact": contact,
+        "timezone": cleaned.get("timezone"),
+        "timezone_source": cleaned.get("timezone_source"),
+        "branch": _optional_normalized_value(cleaned.get("branch")),
+        "branches": _coerce_branches(cleaned),
+        "needs_branch_selection": _coerce_bool(cleaned.get("needs_branch_selection"), default=False),
         "appointments": _coerce_appointments(cleaned),
         "open_opportunities": cleaned.get("open_opportunities") if isinstance(cleaned.get("open_opportunities"), list) else [],
         "sales": cleaned.get("sales") if isinstance(cleaned.get("sales"), dict) else {},
         "flags": _coerce_flags(cleaned),
         "summary": summary,
     }
+    business_context = _build_business_context(cleaned)
+    if business_context is not None:
+        normalized["business_context"] = business_context
+    if "message" in cleaned and isinstance(cleaned["message"], str):
+        normalized["message"] = cleaned["message"]
     if "error_code" in cleaned and not normalized["found"]:
         normalized["error_code"] = cleaned["error_code"]
     return normalized
@@ -208,7 +296,7 @@ async def contact_context(
     channel: str | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Get commercial context for a contact by phone or email."""
+    """Get commercial and operational context for a contact and tenant before agenda actions."""
     payload = ContactContextInput(phone=phone, email=email, name=name, tenant_id=tenant_id, channel=channel)
     settings = get_settings()
     webhook_url = _normalize_text(settings.contact_context_webhook_url)
@@ -262,6 +350,6 @@ async def contact_context(
         return _empty_contact_payload("Contact context service is unavailable.", "upstream_error")
 
     normalized_response = _normalize_success_payload(upstream_payload)
-    if "error_code" not in normalized_response and not normalized_response["found"]:
+    if "error_code" not in normalized_response and not normalized_response.get("ok", True):
         normalized_response["error_code"] = "upstream_error"
     return normalized_response

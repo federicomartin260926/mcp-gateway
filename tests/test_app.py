@@ -166,10 +166,14 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         availability_properties = _tool_input_properties(tools, "appointment_availability")
         confirm_properties = _tool_input_properties(tools, "appointment_confirm")
         booking_properties = _tool_input_properties(tools, "appointment_booking_invitation")
+        confirm_schema = next(tool for tool in tools if tool["name"] == "appointment_confirm").get("inputSchema", {})
         assert "service_id" in availability_properties
         assert "service_ref" in availability_properties
         assert "service_id" in confirm_properties
         assert "service_ref" in confirm_properties
+        assert "owner_id" in confirm_properties
+        assert confirm_schema.get("required") == ["tenant_id", "start_at", "end_at", "timezone", "contact"]
+        assert "anyOf" not in confirm_schema.get("properties", {}).get("contact", {})
         assert "service_id" in booking_properties
         assert "service_ref" in booking_properties
 
@@ -335,7 +339,13 @@ async def test_appointment_availability_without_webhook_returns_not_configured(m
             appointment_confirm_module,
             appointment_confirm,
             "APPOINTMENT_CONFIRM_WEBHOOK_URL",
-            {},
+            {
+                "tenant_id": "tenant-1",
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": "Europe/Madrid",
+                "contact": {"phone": "+34999999999"},
+            },
             "confirmed",
         ),
         (
@@ -413,6 +423,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
         timezone=" Europe/Madrid ",
         service_id=" 019e8ce0-0864-7720-af82-a5c98df2d2dd ",
         service_ref=" null ",
+        owner_id=" 019c33aa-5f3d-729d-933e-3a8c28a2e66d ",
         owner_ref=" 019c33aa-5f3d-729d-933e-3a8c28a2e66d ",
         contact={
             "phone": " +34611949358 ",
@@ -445,6 +456,8 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
         "timezone": "Europe/Madrid",
         "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
         "service_ref": None,
+        "owner_id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
+        "owner_ref": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
         "contact": {
             "phone": "+34611949358",
             "email": None,
@@ -460,6 +473,114 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
     assert payload["confirmed"] is True
     assert payload["appointment"]["id"] == "appointment-1"
     assert payload["message"] == "Appointment confirmed."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs, expected_fragment",
+    [
+        (
+            {
+                "tenant_id": "tenant-1",
+                "start_at": None,
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": "Europe/Madrid",
+                "service_id": "service-1",
+                "owner_id": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "start_at",
+        ),
+        (
+            {
+                "tenant_id": "tenant-1",
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": None,
+                "timezone": "Europe/Madrid",
+                "service_id": "service-1",
+                "owner_id": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "end_at",
+        ),
+        (
+            {
+                "tenant_id": "tenant-1",
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": " ",
+                "service_id": "service-1",
+                "owner_id": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "timezone",
+        ),
+        (
+            {
+                "tenant_id": "tenant-1",
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": "Europe/Madrid",
+                "service_id": None,
+                "service_ref": None,
+                "owner_id": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "service_id/service_ref",
+        ),
+        (
+            {
+                "tenant_id": "tenant-1",
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": "Europe/Madrid",
+                "service_id": "service-1",
+                "owner_id": None,
+                "owner_ref": None,
+                "contact": {"phone": "+34999999999"},
+            },
+            "owner_id/owner_ref",
+        ),
+        (
+            {
+                "tenant_id": "tenant-1",
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": "Europe/Madrid",
+                "service_id": "service-1",
+                "owner_id": "owner-1",
+                "contact": {"name": "Lucia Garcia"},
+            },
+            "contact.phone or contact.email",
+        ),
+    ],
+)
+async def test_appointment_confirm_rejects_missing_required_slot_data_without_calling_upstream(monkeypatch, kwargs, expected_fragment):
+    called = False
+
+    async def fake_post(self, url, json=None, headers=None):
+        nonlocal called
+        called = True
+        raise AssertionError("upstream call should not happen when appointment_confirm validation fails")
+
+    monkeypatch.setattr(
+        appointment_confirm_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_CONFIRM_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_confirm(**kwargs)
+
+    assert called is False
+    assert payload["ok"] is False
+    assert payload["confirmed"] is False
+    assert payload["status"] == "validation_error"
+    assert payload["error_code"] == "validation_error"
+    assert expected_fragment in payload["message"]
 
 
 @pytest.mark.asyncio
@@ -755,8 +876,11 @@ async def test_contact_context_without_webhook_returns_not_configured(monkeypatc
 
     payload = await contact_context(phone="+34123456789")
 
+    assert payload["ok"] is False
+    assert payload["status"] == "not_configured"
     assert payload["found"] is False
     assert payload["error_code"] == "not_configured"
+    assert payload["message"] == "Contact context tool is not configured."
 
 
 @pytest.mark.asyncio
@@ -769,8 +893,11 @@ async def test_contact_context_without_phone_or_email_returns_validation_error(m
 
     payload = await contact_context(name="Cliente Demo")
 
+    assert payload["ok"] is False
+    assert payload["status"] == "validation_error"
     assert payload["found"] is False
     assert payload["error_code"] == "validation_error"
+    assert payload["message"] == "Phone or email is required to retrieve contact context."
 
 
 @pytest.mark.asyncio
@@ -835,6 +962,97 @@ async def test_contact_context_posts_expected_payload(monkeypatch):
     }
     assert payload["found"] is True
     assert payload["contact"]["name"] == "Cliente Demo"
+    assert "Authorization" not in payload
+    assert "X-Downstream-Authorization" not in payload
+
+
+@pytest.mark.asyncio
+async def test_contact_context_normalizes_business_context_and_contact_identity(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "status": "ok",
+                "tenant": {"id": "tenant-1"},
+                "found": True,
+                "contact": {
+                    "name": "Cliente Demo",
+                    "id": "contact-1",
+                    "last_branch": {"id": "branch-1", "name": "Centro"},
+                    "status": "lead",
+                },
+                "timezone": "Europe/Madrid",
+                "timezone_source": "crm_tenant",
+                "branch": {"id": "branch-1", "name": "Centro"},
+                "branches": [
+                    {"id": "branch-1", "name": "Centro"},
+                    {"id": "branch-2", "name": "Norte"},
+                ],
+                "needs_branch_selection": True,
+                "appointments": {"next": None, "items": []},
+                "open_opportunities": [],
+                "sales": {},
+                "flags": {},
+                "summary": "Contexto comercial listo",
+            },
+        )
+
+    monkeypatch.setattr(
+        contact_context_module,
+        "get_settings",
+        lambda: Settings(
+            CONTACT_CONTEXT_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await contact_context(
+        phone="+34999999999",
+        tenant_id="tenant-1",
+        channel="whatsapp",
+        ctx=make_context("Bearer TEST_DOWNSTREAM_TOKEN_123456"),
+    )
+
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer secret-token",
+        "X-Downstream-Authorization": "Bearer TEST_DOWNSTREAM_TOKEN_123456",
+    }
+    assert payload["ok"] is True
+    assert payload["status"] == "ok"
+    assert payload["tenant"] == {"id": "tenant-1"}
+    assert payload["found"] is True
+    assert payload["contact"]["found"] is True
+    assert payload["contact"]["id"] == "contact-1"
+    assert payload["contact"]["last_branch"] == {"id": "branch-1", "name": "Centro"}
+    assert payload["timezone"] == "Europe/Madrid"
+    assert payload["timezone_source"] == "crm_tenant"
+    assert payload["branch"] == {"id": "branch-1", "name": "Centro"}
+    assert payload["branches"] == [
+        {"id": "branch-1", "name": "Centro"},
+        {"id": "branch-2", "name": "Norte"},
+    ]
+    assert payload["needs_branch_selection"] is True
+    assert payload["business_context"] == {
+        "timezone": "Europe/Madrid",
+        "timezone_source": "crm_tenant",
+        "branch": {"id": "branch-1", "name": "Centro"},
+        "branches": [
+            {"id": "branch-1", "name": "Centro"},
+            {"id": "branch-2", "name": "Norte"},
+        ],
+        "needs_branch_selection": True,
+    }
+    assert "Authorization" not in payload
+    assert "X-Downstream-Authorization" not in payload
 
 
 @pytest.mark.asyncio
@@ -853,8 +1071,40 @@ async def test_contact_context_timeout_returns_timeout_error(monkeypatch):
 
     payload = await contact_context(phone="+34999999999")
 
+    assert payload["ok"] is False
+    assert payload["status"] == "timeout"
     assert payload["found"] is False
     assert payload["error_code"] == "timeout"
+    assert payload["message"] == "Contact context request timed out."
+
+
+@pytest.mark.asyncio
+async def test_contact_context_null_contact_marks_contact_unfound(monkeypatch):
+    async def fake_post(self, url, json=None, headers=None):
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "status": "ok",
+                "contact": None,
+                "summary": "Sin contacto",
+            },
+        )
+
+    monkeypatch.setattr(
+        contact_context_module,
+        "get_settings",
+        lambda: Settings(CONTACT_CONTEXT_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await contact_context(phone="+34999999999")
+
+    assert payload["ok"] is True
+    assert payload["status"] == "ok"
+    assert payload["found"] is False
+    assert payload["contact"] == {"found": False}
 
 
 @pytest.mark.asyncio

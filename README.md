@@ -358,7 +358,8 @@ Variables de entorno:
 - `N8N_WEBHOOK_BEARER_TOKEN`
 - `CONTACT_CONTEXT_TIMEOUT_SECONDS`
 
-La tool `contact_context` consulta contexto comercial real delegando en un webhook n8n.
+La tool `contact_context` consulta contexto comercial y operativo real delegando en un webhook n8n.
+Debe usarse antes de acciones de agenda cuando el contexto externo no sea reciente.
 Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un payload normalizado con `error_code: "not_configured"` y no llama al upstream.
 
 ### Input
@@ -380,6 +381,9 @@ Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un paylo
 - envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
 - si la request MCP original llevaba `Authorization`, también lo reenvía a n8n como `X-Downstream-Authorization`
 - usa `CONTACT_CONTEXT_TIMEOUT_SECONDS` con valor por defecto `5`
+- devuelve `timezone` efectiva y `timezone_source` cuando vienen del upstream
+- puede devolver `branch`/`branches` y `needs_branch_selection=true`; en ese caso el LLM debe pedir la sucursal antes de consultar disponibilidad
+- no inventar `timezone`, `branch_id`, `contact_id`, `service_id` ni `owner_id`
 
 ### Payload enviado a n8n
 
@@ -401,14 +405,34 @@ Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un paylo
 
 ```json
 {
+  "ok": true,
+  "status": "ok",
   "found": true,
+  "tenant": {
+    "id": "tenant-1"
+  },
   "contact": {
+    "found": true,
+    "id": "contact-1",
     "name": "Cliente Demo",
     "type": "lead",
     "status": "lead",
     "stage": "new",
     "owner": null,
-    "last_interaction": null
+    "last_interaction": null,
+    "last_branch": null
+  },
+  "timezone": "Europe/Madrid",
+  "timezone_source": "crm_tenant",
+  "branch": null,
+  "branches": [],
+  "needs_branch_selection": false,
+  "business_context": {
+    "timezone": "Europe/Madrid",
+    "timezone_source": "crm_tenant",
+    "branch": null,
+    "branches": [],
+    "needs_branch_selection": false
   },
   "appointments": {
     "next": null,
@@ -424,7 +448,7 @@ Si `CONTACT_CONTEXT_WEBHOOK_URL` no está configurada, la tool devuelve un paylo
 }
 ```
 
-Si hay error de configuración, validación o upstream, la tool devuelve el mismo esquema con `found: false`, `summary` útil para el LLM y `error_code`.
+Si hay error de configuración, validación o upstream, la tool devuelve `ok: false`, `status`/`error_code` claros, `message` útil para el LLM y `found: false`.
 
 ## Appointment availability
 

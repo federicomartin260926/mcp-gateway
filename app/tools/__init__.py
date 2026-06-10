@@ -25,7 +25,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "contact_context",
-            "description": "Get commercial context for a contact by phone or email.",
+            "description": "Get commercial and operational context for a contact and tenant before agenda actions. Call it first when external context is stale or missing; it returns effective timezone, timezone_source and optional branch selection hints. Do not invent timezone, branch_id, contact_id, service_id or owner_id.",
         },
         {
             "name": "appointment_availability",
