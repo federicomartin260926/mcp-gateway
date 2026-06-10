@@ -27,9 +27,10 @@ class AppointmentConfirmInput(BaseModel):
     tenant_id: str | None = None
     start_at: str | None = None
     end_at: str | None = None
-    timezone: str | None = "Europe/Madrid"
+    timezone: str | None = None
     service_id: str | None = None
     service_ref: str | None = None
+    owner_id: str | None = None
     owner_ref: str | None = None
     contact: AppointmentConfirmContactInput | None = None
     title: str | None = None
@@ -42,6 +43,7 @@ def _empty_payload(message: str, error_code: str) -> dict[str, Any]:
     return {
         "ok": False,
         "confirmed": False,
+        "status": error_code,
         "appointment": {},
         "message": message,
         "raw_summary": {},
@@ -60,16 +62,30 @@ def _normalize_contact(contact: Any) -> dict[str, Any] | None:
     return {key: normalize_text(value) for key, value in normalized.items()}
 
 
-def _build_slot(start_at: str | None, end_at: str | None, owner_ref: str | None) -> dict[str, Any] | None:
-    if start_at is None and end_at is None and owner_ref is None:
+def _build_slot(
+    start_at: str | None,
+    end_at: str | None,
+    owner_id: str | None,
+    owner_ref: str | None,
+) -> dict[str, Any] | None:
+    if start_at is None and end_at is None and owner_id is None and owner_ref is None:
         return None
 
     slot: dict[str, Any] = {
         "start": start_at,
         "end": end_at,
     }
-    if owner_ref is not None:
-        slot["owner"] = {"id": owner_ref}
+    owner: dict[str, Any] = {}
+    if owner_id is not None:
+        owner["id"] = owner_id
+    elif owner_ref is not None:
+        owner["id"] = owner_ref
+
+    if owner_ref is not None and owner_ref != owner.get("id"):
+        owner["ref"] = owner_ref
+
+    if owner:
+        slot["owner"] = owner
 
     return slot
 
@@ -108,14 +124,15 @@ def _normalize_success_payload(payload: Any) -> dict[str, Any]:
 
 
 async def appointment_confirm(
-    tenant_id: str | None = None,
-    start_at: str | None = None,
-    end_at: str | None = None,
-    timezone: str | None = "Europe/Madrid",
-    service_id: str | None = None,
-    service_ref: str | None = None,
-    owner_ref: str | None = None,
-    contact: AppointmentConfirmContactInput | dict[str, Any] | None = None,
+    tenant_id: str,
+    start_at: str,
+    end_at: str,
+    timezone: str,
+    contact: AppointmentConfirmContactInput,
+    service_id: str = "",
+    service_ref: str = "",
+    owner_id: str = "",
+    owner_ref: str = "",
     title: str | None = None,
     notes: str | None = None,
     conversation_id: str | None = None,
@@ -126,6 +143,11 @@ async def appointment_confirm(
 
     Prefer `service_id` with the canonical UUID returned by `services_search`.
     Use `service_ref` only as a fallback with slug, integration key or external reference.
+    Do not invent UUIDs or technical IDs: `service_id`, `service_ref`, `owner_id` and `owner_ref`
+    must come from upstream tools or existing context.
+    The slot must be complete: `tenant_id`, `start_at`, `end_at`, `timezone`, one service
+    identifier, one owner identifier, and `contact.phone` or `contact.email`.
+    Do not fall back silently to a default timezone.
     """
     try:
         payload = AppointmentConfirmInput(
@@ -135,6 +157,7 @@ async def appointment_confirm(
             timezone=timezone,
             service_id=service_id,
             service_ref=service_ref,
+            owner_id=owner_id,
             owner_ref=owner_ref,
             contact=contact,
             title=title,
@@ -154,9 +177,10 @@ async def appointment_confirm(
     normalized_tenant_id = normalize_text(payload.tenant_id)
     normalized_start_at = normalize_text(payload.start_at)
     normalized_end_at = normalize_text(payload.end_at)
-    normalized_timezone = normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_timezone = normalize_text(payload.timezone)
     normalized_service_id = normalize_text(payload.service_id)
     normalized_service_ref = normalize_text(payload.service_ref)
+    normalized_owner_id = normalize_text(payload.owner_id)
     normalized_owner_ref = normalize_text(payload.owner_ref)
     normalized_contact = _normalize_contact(payload.contact)
     normalized_title = normalize_text(payload.title)
@@ -167,20 +191,39 @@ async def appointment_confirm(
     if webhook_url is None:
         return _empty_payload("Appointment confirm service is not configured.", "not_configured")
 
+    missing_fields: list[str] = []
     if normalized_tenant_id is None:
-        return _empty_payload("tenant_id is required to confirm an appointment.", "validation_error")
+        missing_fields.append("tenant_id")
     if normalized_start_at is None:
-        return _empty_payload("start_at is required to confirm an appointment.", "validation_error")
-    if not isinstance(normalized_contact, dict) or (normalize_text(normalized_contact.get("phone")) is None and normalize_text(normalized_contact.get("email")) is None):
-        return _empty_payload("contact.phone or contact.email is required to confirm an appointment.", "validation_error")
+        missing_fields.append("start_at")
+    if normalized_timezone is None:
+        missing_fields.append("timezone")
+    if normalized_end_at is None:
+        missing_fields.append("end_at")
+    if normalized_service_id is None and normalized_service_ref is None:
+        missing_fields.append("service_id/service_ref")
+    if normalized_owner_id is None and normalized_owner_ref is None:
+        missing_fields.append("owner_id/owner_ref")
+    if not isinstance(normalized_contact, dict) or (
+        normalize_text(normalized_contact.get("phone")) is None and normalize_text(normalized_contact.get("email")) is None
+    ):
+        missing_fields.append("contact.phone or contact.email")
+
+    if missing_fields:
+        return _empty_payload(
+            "Missing required fields to confirm an appointment: " + ", ".join(missing_fields) + ".",
+            "validation_error",
+        )
 
     body = {
         "tool": "appointment_confirm",
         "tenant_id": normalized_tenant_id,
-        "slot": _build_slot(normalized_start_at, normalized_end_at, normalized_owner_ref),
+        "slot": _build_slot(normalized_start_at, normalized_end_at, normalized_owner_id, normalized_owner_ref),
         "timezone": normalized_timezone,
         "service_id": normalized_service_id,
         "service_ref": normalized_service_ref,
+        "owner_id": normalized_owner_id,
+        "owner_ref": normalized_owner_ref,
         "contact": normalized_contact,
         "title": normalized_title,
         "notes": normalized_notes,

@@ -37,7 +37,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_confirm",
-            "description": "Confirm an appointment through n8n for a tenant, contact and selected slot. Prefer service_id UUID from services_search; use service_ref only as fallback.",
+            "description": "Confirm an appointment through n8n for a tenant, contact and selected slot. Require tenant_id, start_at, end_at, timezone and contact. Prefer service_id UUID from services_search; use service_ref only as fallback. Require one owner identifier (owner_id or owner_ref) and do not invent timezone, service_id or owner_id.",
         },
         {
             "name": "appointment_reschedule",

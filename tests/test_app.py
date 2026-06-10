@@ -172,6 +172,8 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "service_id" in confirm_properties
         assert "service_ref" in confirm_properties
         assert "owner_id" in confirm_properties
+        assert "owner_ref" in confirm_properties
+        assert "timezone" in confirm_properties
         assert confirm_schema.get("required") == ["tenant_id", "start_at", "end_at", "timezone", "contact"]
         assert "anyOf" not in confirm_schema.get("properties", {}).get("contact", {})
         assert "service_id" in booking_properties
@@ -476,9 +478,103 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_appointment_confirm_prefers_owner_id_in_slot_and_body(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["json"] = json
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "confirmed": True,
+                "appointment_id": "appointment-1",
+                "message": "Appointment confirmed.",
+            },
+        )
+
+    monkeypatch.setattr(
+        appointment_confirm_module,
+        "get_settings",
+        lambda: Settings(APPOINTMENT_CONFIRM_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_confirm(
+        tenant_id="tenant-1",
+        start_at="2026-05-20T10:00:00+02:00",
+        end_at="2026-05-20T10:30:00+02:00",
+        timezone="Europe/Madrid",
+        service_id="service-1",
+        owner_id="owner-1",
+        contact={"phone": "+34999999999"},
+    )
+
+    assert payload["ok"] is True
+    assert captured["json"]["owner_id"] == "owner-1"
+    assert captured["json"]["slot"]["owner"]["id"] == "owner-1"
+    assert "ref" not in captured["json"]["slot"]["owner"]
+
+
+@pytest.mark.asyncio
+async def test_appointment_confirm_keeps_owner_ref_compatibility(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "confirmed": True,
+                "appointment_id": "appointment-1",
+                "message": "Appointment confirmed.",
+            },
+        )
+
+    monkeypatch.setattr(
+        appointment_confirm_module,
+        "get_settings",
+        lambda: Settings(APPOINTMENT_CONFIRM_WEBHOOK_URL="https://n8n.example/webhook"),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_confirm(
+        tenant_id="tenant-1",
+        start_at="2026-05-20T10:00:00+02:00",
+        end_at="2026-05-20T10:30:00+02:00",
+        timezone="Europe/Madrid",
+        service_ref="service-slug",
+        owner_ref="owner-slug",
+        contact={"phone": "+34999999999"},
+    )
+
+    assert payload["ok"] is True
+    assert captured["json"]["service_ref"] == "service-slug"
+    assert captured["json"]["owner_ref"] == "owner-slug"
+    assert captured["json"]["slot"]["owner"]["id"] == "owner-slug"
+    assert "ref" not in captured["json"]["slot"]["owner"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "kwargs, expected_fragment",
     [
+        (
+            {
+                "tenant_id": None,
+                "start_at": "2026-05-20T10:00:00+02:00",
+                "end_at": "2026-05-20T10:30:00+02:00",
+                "timezone": "Europe/Madrid",
+                "service_id": "service-1",
+                "owner_id": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "tenant_id",
+        ),
         (
             {
                 "tenant_id": "tenant-1",
