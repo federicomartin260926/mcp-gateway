@@ -485,7 +485,7 @@ Si `APPOINTMENT_AVAILABILITY_WEBHOOK_URL` no está configurada, devuelve un payl
 
 - exige `date_from` y `date_to`
 - normaliza strings vacíos, espacios y valores tipo `"null"` a `null`
-- `timezone` usa `Europe/Madrid` por defecto
+- `timezone` es obligatoria y debe venir de `contact_context`, tenant o contexto de negocio explícito
 - `duration_minutes` se limita entre `5` y `240`
 - `limit` se limita entre `1` y `10`
 - envía `Authorization: Bearer <N8N_WEBHOOK_BEARER_TOKEN>` solo si el token existe y no está vacío
@@ -572,6 +572,7 @@ Variables de entorno:
 
 Cada tool normaliza entradas vacías, aplica defaults razonables y devuelve un payload controlado con `ok`, `message` y `error_code` cuando corresponde.
 Si el webhook no está configurado, responde con `error_code: "not_configured"` sin llamar al upstream.
+Las tools que operan con fecha y hora requieren `timezone` explícita y no hacen fallback silencioso a `Europe/Madrid`.
 
 ## Services search
 

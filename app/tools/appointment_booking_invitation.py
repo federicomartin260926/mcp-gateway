@@ -26,7 +26,7 @@ class AppointmentBookingInvitationInput(BaseModel):
 
     tenant_id: str | None = None
     contact: AppointmentBookingInvitationContactInput | None = None
-    timezone: str | None = "Europe/Madrid"
+    timezone: str | None = None
     service_id: str | None = None
     service_ref: str | None = None
     owner_ref: str | None = None
@@ -42,6 +42,7 @@ def _empty_payload(message: str, error_code: str) -> dict[str, Any]:
     return {
         "ok": False,
         "created": False,
+        "status": error_code,
         "booking_url": None,
         "invitation": {},
         "message": message,
@@ -96,7 +97,8 @@ def _normalize_success_payload(payload: Any) -> dict[str, Any]:
 async def appointment_booking_invitation(
     tenant_id: str | None = None,
     contact: AppointmentBookingInvitationContactInput | dict[str, Any] | None = None,
-    timezone: str | None = "Europe/Madrid",
+    *,
+    timezone: str,
     service_id: str | None = None,
     service_ref: str | None = None,
     owner_ref: str | None = None,
@@ -112,6 +114,9 @@ async def appointment_booking_invitation(
 
     Prefer `service_id` with the canonical UUID returned by `services_search`.
     Use `service_ref` only as a fallback with slug, integration key or external reference.
+    `timezone` must come from `contact_context.business_context.timezone`, tenant context, branch
+    context or an explicit user/business context. Do not use a hardcoded timezone or silently
+    fallback. If timezone is missing, ask/obtain `contact_context` first.
     """
     try:
         payload = AppointmentBookingInvitationInput(
@@ -138,7 +143,7 @@ async def appointment_booking_invitation(
     downstream_authorization = extract_request_authorization(ctx)
 
     normalized_tenant_id = normalize_text(payload.tenant_id)
-    normalized_timezone = normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_timezone = normalize_text(payload.timezone)
     normalized_service_id = normalize_text(payload.service_id)
     normalized_service_ref = normalize_text(payload.service_ref)
     normalized_owner_ref = normalize_text(payload.owner_ref)
@@ -150,13 +155,14 @@ async def appointment_booking_invitation(
     normalized_entrypoint_ref = normalize_text(payload.entrypoint_ref)
     normalized_contact = _normalize_contact(payload.contact)
 
-    if webhook_url is None:
-        return _empty_payload("Appointment booking invitation service is not configured.", "not_configured")
-
+    if normalized_timezone is None:
+        return _empty_payload("timezone is required to create a booking invitation.", "validation_error")
     if normalized_tenant_id is None:
         return _empty_payload("tenant_id is required to create a booking invitation.", "validation_error")
     if not isinstance(normalized_contact, dict) or (normalize_text(normalized_contact.get("phone")) is None and normalize_text(normalized_contact.get("email")) is None):
         return _empty_payload("contact.phone or contact.email is required to create a booking invitation.", "validation_error")
+    if webhook_url is None:
+        return _empty_payload("Appointment booking invitation service is not configured.", "not_configured")
 
     body = {
         "tool": "appointment_booking_invitation",

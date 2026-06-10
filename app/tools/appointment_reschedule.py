@@ -28,7 +28,7 @@ class AppointmentRescheduleInput(BaseModel):
     appointment_id: str | None = None
     new_start_at: str | None = None
     new_end_at: str | None = None
-    timezone: str | None = "Europe/Madrid"
+    timezone: str | None = None
     service_ref: str | None = None
     owner_ref: str | None = None
     contact: AppointmentRescheduleContactInput | None = None
@@ -41,6 +41,7 @@ def _empty_payload(message: str, error_code: str) -> dict[str, Any]:
     return {
         "ok": False,
         "rescheduled": False,
+        "status": error_code,
         "appointment": {},
         "message": message,
         "raw_summary": {},
@@ -89,7 +90,8 @@ async def appointment_reschedule(
     appointment_id: str | None = None,
     new_start_at: str | None = None,
     new_end_at: str | None = None,
-    timezone: str | None = "Europe/Madrid",
+    *,
+    timezone: str,
     service_ref: str | None = None,
     owner_ref: str | None = None,
     contact: AppointmentRescheduleContactInput | dict[str, Any] | None = None,
@@ -98,6 +100,12 @@ async def appointment_reschedule(
     entrypoint_ref: str | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
+    """Reschedule an existing appointment through n8n.
+
+    `timezone` must come from `contact_context.business_context.timezone`, tenant context, branch
+    context or an explicit user/business context. Do not use a hardcoded timezone or silently
+    fallback. If timezone is missing, ask/obtain `contact_context` first.
+    """
     try:
         payload = AppointmentRescheduleInput(
             tenant_id=tenant_id,
@@ -125,7 +133,7 @@ async def appointment_reschedule(
     normalized_appointment_id = normalize_text(payload.appointment_id)
     normalized_new_start_at = normalize_text(payload.new_start_at)
     normalized_new_end_at = normalize_text(payload.new_end_at)
-    normalized_timezone = normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_timezone = normalize_text(payload.timezone)
     normalized_service_ref = normalize_text(payload.service_ref)
     normalized_owner_ref = normalize_text(payload.owner_ref)
     normalized_contact = _normalize_contact(payload.contact)
@@ -133,15 +141,16 @@ async def appointment_reschedule(
     normalized_conversation_id = normalize_text(payload.conversation_id)
     normalized_entrypoint_ref = normalize_text(payload.entrypoint_ref)
 
-    if webhook_url is None:
-        return _empty_payload("Appointment reschedule service is not configured.", "not_configured")
-
+    if normalized_timezone is None:
+        return _empty_payload("timezone is required to reschedule an appointment.", "validation_error")
     if normalized_tenant_id is None:
         return _empty_payload("tenant_id is required to reschedule an appointment.", "validation_error")
     if normalized_appointment_id is None:
         return _empty_payload("appointment_id is required to reschedule an appointment.", "validation_error")
     if normalized_new_start_at is None:
         return _empty_payload("new_start_at is required to reschedule an appointment.", "validation_error")
+    if webhook_url is None:
+        return _empty_payload("Appointment reschedule service is not configured.", "not_configured")
 
     body = {
         "tool": "appointment_reschedule",

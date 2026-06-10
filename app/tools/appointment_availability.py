@@ -79,7 +79,7 @@ class AppointmentAvailabilityInput(BaseModel):
     tenant_id: str | None = None
     date_from: str | None = None
     date_to: str | None = None
-    timezone: str | None = "Europe/Madrid"
+    timezone: str | None = None
     duration_minutes: int | None = 30
     limit: int | None = 50
     service_id: str | None = None
@@ -92,6 +92,7 @@ def _empty_payload(timezone: str, message: str, error_code: str) -> dict[str, An
     return {
         "ok": False,
         "available": False,
+        "status": error_code,
         "timezone": timezone,
         "slots": [],
         "message": message,
@@ -115,7 +116,9 @@ def _normalize_success_payload(
     elif isinstance(cleaned.get("data"), dict):
         cleaned = cleaned["data"]
 
-    timezone = cleaned.get("timezone") if isinstance(cleaned.get("timezone"), str) and cleaned.get("timezone").strip() else fallback_timezone
+    timezone = fallback_timezone if isinstance(fallback_timezone, str) and fallback_timezone.strip() else (
+        cleaned.get("timezone") if isinstance(cleaned.get("timezone"), str) and cleaned.get("timezone").strip() else fallback_timezone
+    )
     slots = cleaned.get("slots") if isinstance(cleaned.get("slots"), list) else []
     if requested_limit is not None:
         slots = slots[:requested_limit]
@@ -175,7 +178,8 @@ async def appointment_availability(
     tenant_id: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    timezone: str | None = "Europe/Madrid",
+    *,
+    timezone: str,
     duration_minutes: int | None = 30,
     limit: int | None = 50,
     service_id: str | None = None,
@@ -188,6 +192,9 @@ async def appointment_availability(
 
     Prefer `service_id` with the canonical UUID returned by `services_search`.
     Use `service_ref` only as a fallback with slug, integration key or external reference.
+    `timezone` must come from `contact_context.business_context.timezone`, tenant context, branch
+    context or an explicit user/business context. Do not use a hardcoded timezone or silently
+    fallback. If timezone is missing, ask/obtain `contact_context` first.
     """
     payload = AppointmentAvailabilityInput(
         tenant_id=tenant_id,
@@ -208,7 +215,7 @@ async def appointment_availability(
     timeout_seconds = settings.appointment_availability_timeout_seconds
     downstream_authorization = extract_request_authorization(ctx)
 
-    normalized_timezone = _normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_timezone = _normalize_text(payload.timezone)
     normalized_date_from = _normalize_text(payload.date_from)
     normalized_date_to = _normalize_text(payload.date_to)
     normalized_tenant_id = _normalize_text(payload.tenant_id)
@@ -220,6 +227,13 @@ async def appointment_availability(
     normalized_contact = payload.contact.model_dump() if isinstance(payload.contact, AppointmentAvailabilityContactInput) else payload.contact
     if isinstance(normalized_contact, dict):
         normalized_contact = {key: _normalize_text(value) for key, value in normalized_contact.items()}
+
+    if normalized_timezone is None:
+        return _empty_payload(
+            "",
+            "timezone is required to retrieve appointment availability.",
+            "validation_error",
+        )
 
     if webhook_url is None:
         return _empty_payload(

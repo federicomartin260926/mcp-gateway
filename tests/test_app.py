@@ -14,6 +14,7 @@ from app.tools.appointment_booking_invitation import appointment_booking_invitat
 from app.tools.appointment_cancel import appointment_cancel
 from app.tools.appointment_availability import appointment_availability
 from app.tools.appointment_confirm import appointment_confirm
+from app.tools.appointment_events import appointment_events
 from app.tools.appointment_reschedule import appointment_reschedule
 from app.tools.contact_context import contact_context
 from app.tools.crm_contact_submit import crm_contact_submit
@@ -27,6 +28,7 @@ appointment_booking_invitation_module = importlib.import_module("app.tools.appoi
 appointment_cancel_module = importlib.import_module("app.tools.appointment_cancel")
 appointment_availability_module = importlib.import_module("app.tools.appointment_availability")
 appointment_confirm_module = importlib.import_module("app.tools.appointment_confirm")
+appointment_events_module = importlib.import_module("app.tools.appointment_events")
 appointment_reschedule_module = importlib.import_module("app.tools.appointment_reschedule")
 contact_context_module = importlib.import_module("app.tools.contact_context")
 crm_contact_submit_module = importlib.import_module("app.tools.crm_contact_submit")
@@ -164,16 +166,23 @@ def test_mcp_discovery_and_tool_call_work_via_streamable_http():
         assert "services_search" in [tool["name"] for tool in tools]
         assert "handoff_request" in [tool["name"] for tool in tools]
         availability_properties = _tool_input_properties(tools, "appointment_availability")
+        events_properties = _tool_input_properties(tools, "appointment_events")
         confirm_properties = _tool_input_properties(tools, "appointment_confirm")
+        reschedule_properties = _tool_input_properties(tools, "appointment_reschedule")
         booking_properties = _tool_input_properties(tools, "appointment_booking_invitation")
         confirm_schema = next(tool for tool in tools if tool["name"] == "appointment_confirm").get("inputSchema", {})
         assert "service_id" in availability_properties
         assert "service_ref" in availability_properties
+        assert availability_properties["timezone"].get("default") is None
+        assert events_properties["timezone"].get("default") is None
         assert "service_id" in confirm_properties
         assert "service_ref" in confirm_properties
         assert "owner_id" in confirm_properties
         assert "owner_ref" in confirm_properties
         assert "timezone" in confirm_properties
+        assert confirm_properties["timezone"].get("default") is None
+        assert reschedule_properties["timezone"].get("default") is None
+        assert booking_properties["timezone"].get("default") is None
         assert confirm_schema.get("required") == ["tenant_id", "start_at", "end_at", "timezone", "contact"]
         assert "anyOf" not in confirm_schema.get("properties", {}).get("contact", {})
         assert "service_id" in booking_properties
@@ -326,7 +335,11 @@ async def test_appointment_availability_without_webhook_returns_not_configured(m
         lambda: Settings(APPOINTMENT_AVAILABILITY_WEBHOOK_URL=""),
     )
 
-    payload = await appointment_availability(date_from="2026-05-11", date_to="2026-05-15")
+    payload = await appointment_availability(
+        date_from="2026-05-11",
+        date_to="2026-05-15",
+        timezone="Atlantic/Canary",
+    )
 
     assert payload["ok"] is False
     assert payload["available"] is False
@@ -354,7 +367,12 @@ async def test_appointment_availability_without_webhook_returns_not_configured(m
             appointment_reschedule_module,
             appointment_reschedule,
             "APPOINTMENT_RESCHEDULE_WEBHOOK_URL",
-            {},
+            {
+                "tenant_id": "tenant-1",
+                "appointment_id": "appointment-1",
+                "new_start_at": "2026-05-20T10:00:00+00:00",
+                "timezone": "Atlantic/Canary",
+            },
             "rescheduled",
         ),
         (
@@ -368,7 +386,11 @@ async def test_appointment_availability_without_webhook_returns_not_configured(m
             appointment_booking_invitation_module,
             appointment_booking_invitation,
             "APPOINTMENT_BOOKING_INVITATION_WEBHOOK_URL",
-            {},
+            {
+                "tenant_id": "tenant-1",
+                "contact": {"phone": "+34999999999"},
+                "timezone": "Atlantic/Canary",
+            },
             "created",
         ),
     ],
@@ -422,7 +444,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
         tenant_id=" 019dddb7-db7b-7cdd-963e-4294476ba1e7 ",
         start_at=" 2026-05-20T10:00:00+02:00 ",
         end_at=" 2026-05-20T10:30:00+02:00 ",
-        timezone=" Europe/Madrid ",
+        timezone=" Atlantic/Canary ",
         service_id=" 019e8ce0-0864-7720-af82-a5c98df2d2dd ",
         service_ref=" null ",
         owner_id=" 019c33aa-5f3d-729d-933e-3a8c28a2e66d ",
@@ -455,7 +477,7 @@ async def test_appointment_confirm_posts_expected_slot_payload(monkeypatch):
                 "id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
             },
         },
-        "timezone": "Europe/Madrid",
+        "timezone": "Atlantic/Canary",
         "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
         "service_ref": None,
         "owner_id": "019c33aa-5f3d-729d-933e-3a8c28a2e66d",
@@ -687,8 +709,8 @@ async def test_appointment_availability_requires_date_from_and_date_to(monkeypat
         lambda: Settings(APPOINTMENT_AVAILABILITY_WEBHOOK_URL="https://n8n.example/webhook"),
     )
 
-    missing_date_from = await appointment_availability(date_from=None, date_to="2026-05-15")
-    missing_date_to = await appointment_availability(date_from="2026-05-11", date_to=None)
+    missing_date_from = await appointment_availability(date_from=None, date_to="2026-05-15", timezone="Atlantic/Canary")
+    missing_date_to = await appointment_availability(date_from="2026-05-11", date_to=None, timezone="Atlantic/Canary")
 
     assert missing_date_from["error_code"] == "validation_error"
     assert missing_date_to["error_code"] == "validation_error"
@@ -752,7 +774,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         tenant_id="019dddb7-db7b-7cdd-963e-4294476ba1e7",
         date_from="2026-05-11",
         date_to="2026-05-15",
-        timezone="  ",
+        timezone="Atlantic/Canary",
         duration_minutes=30,
         limit=100,
         service_id="019e8ce0-0864-7720-af82-a5c98df2d2dd",
@@ -777,7 +799,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
         "date_from": "2026-05-11",
         "date_to": "2026-05-15",
-        "timezone": "Europe/Madrid",
+        "timezone": "Atlantic/Canary",
         "duration_minutes": 30,
         "limit": 100,
         "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
@@ -792,7 +814,7 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
     }
     assert payload["ok"] is True
     assert payload["available"] is True
-    assert payload["timezone"] == "Europe/Madrid"
+    assert payload["timezone"] == "Atlantic/Canary"
     assert payload["slots"][0]["owner"]["name"] == "Carla"
     assert payload["message"].startswith("Hay 6")
     assert payload["raw_summary"]["totalSlots"] == 6
@@ -964,6 +986,168 @@ async def test_appointment_booking_invitation_posts_expected_payload(monkeypatch
     assert payload["created"] is True
     assert payload["booking_url"] == "https://booking.example/invite/abc"
     assert payload["message"] == "Booking invitation created."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "function, module, settings_key, kwargs, expected_message_fragment",
+    [
+        (
+            appointment_availability,
+            appointment_availability_module,
+            "APPOINTMENT_AVAILABILITY_WEBHOOK_URL",
+            {
+                "tenant_id": "tenant-1",
+                "date_from": "2026-05-11",
+                "date_to": "2026-05-15",
+                "timezone": None,
+                "service_id": "service-1",
+                "owner_ref": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "timezone",
+        ),
+        (
+            appointment_events,
+            appointment_events_module,
+            "APPOINTMENT_EVENTS_WEBHOOK_URL",
+            {
+                "tenant_id": "tenant-1",
+                "date_from": "2026-05-11",
+                "date_to": "2026-05-15",
+                "timezone": None,
+                "service_ref": "service-slug",
+                "owner_ref": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "timezone",
+        ),
+        (
+            appointment_reschedule,
+            appointment_reschedule_module,
+            "APPOINTMENT_RESCHEDULE_WEBHOOK_URL",
+            {
+                "tenant_id": "tenant-1",
+                "appointment_id": "appointment-1",
+                "new_start_at": "2026-05-20T10:00:00+00:00",
+                "new_end_at": "2026-05-20T10:30:00+00:00",
+                "timezone": None,
+                "service_ref": "service-slug",
+                "owner_ref": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "timezone",
+        ),
+        (
+            appointment_booking_invitation,
+            appointment_booking_invitation_module,
+            "APPOINTMENT_BOOKING_INVITATION_WEBHOOK_URL",
+            {
+                "tenant_id": "tenant-1",
+                "contact": {"phone": "+34999999999"},
+                "timezone": None,
+                "service_ref": "service-slug",
+                "owner_ref": "owner-1",
+                "date_from": "2026-05-11",
+                "date_to": "2026-05-15",
+            },
+            "timezone",
+        ),
+    ],
+)
+async def test_agenda_tools_reject_missing_timezone_without_calling_upstream(
+    monkeypatch,
+    function,
+    module,
+    settings_key,
+    kwargs,
+    expected_message_fragment,
+):
+    called = False
+
+    async def fake_post(self, url, json=None, headers=None):
+        nonlocal called
+        called = True
+        raise AssertionError("upstream call should not happen when timezone is missing")
+
+    monkeypatch.setattr(
+        module,
+        "get_settings",
+        lambda: Settings(**{settings_key: "https://n8n.example/webhook", "N8N_WEBHOOK_BEARER_TOKEN": "secret-token"}),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await function(**kwargs)
+
+    assert called is False
+    assert payload["ok"] is False
+    assert payload["status"] == "validation_error"
+    assert payload["error_code"] == "validation_error"
+    assert expected_message_fragment in payload["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "function, module, settings_key, kwargs, expected_body_timezone",
+    [
+        (
+            appointment_events,
+            appointment_events_module,
+            "APPOINTMENT_EVENTS_WEBHOOK_URL",
+            {
+                "tenant_id": "tenant-1",
+                "date_from": "2026-05-11",
+                "date_to": "2026-05-15",
+                "timezone": "Atlantic/Canary",
+                "service_ref": "service-slug",
+                "owner_ref": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "Atlantic/Canary",
+        ),
+        (
+            appointment_reschedule,
+            appointment_reschedule_module,
+            "APPOINTMENT_RESCHEDULE_WEBHOOK_URL",
+            {
+                "tenant_id": "tenant-1",
+                "appointment_id": "appointment-1",
+                "new_start_at": "2026-05-20T10:00:00+00:00",
+                "new_end_at": "2026-05-20T10:30:00+00:00",
+                "timezone": "Atlantic/Canary",
+                "service_ref": "service-slug",
+                "owner_ref": "owner-1",
+                "contact": {"phone": "+34999999999"},
+            },
+            "Atlantic/Canary",
+        ),
+    ],
+)
+async def test_agenda_tools_forward_explicit_timezone_exactly(
+    monkeypatch,
+    function,
+    module,
+    settings_key,
+    kwargs,
+    expected_body_timezone,
+):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["json"] = json
+        return httpx.Response(200, request=httpx.Request("POST", url), json={"ok": True, "found": True, "rescheduled": True, "message": "ok"})
+
+    monkeypatch.setattr(
+        module,
+        "get_settings",
+        lambda: Settings(**{settings_key: "https://n8n.example/webhook", "N8N_WEBHOOK_BEARER_TOKEN": "secret-token"}),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await function(**kwargs)
+
+    assert captured["json"]["timezone"] == expected_body_timezone
+    assert payload["ok"] is True
 
 
 @pytest.mark.asyncio
@@ -1457,7 +1641,7 @@ async def test_appointment_availability_timeout_returns_timeout_error(monkeypatc
     )
     monkeypatch.setattr(appointment_availability_module.httpx.AsyncClient, "post", fake_post)
 
-    payload = await appointment_availability(date_from="2026-05-11", date_to="2026-05-15")
+    payload = await appointment_availability(date_from="2026-05-11", date_to="2026-05-15", timezone="Atlantic/Canary")
 
     assert payload["ok"] is False
     assert payload["error_code"] == "timeout"

@@ -79,7 +79,7 @@ class AppointmentEventsInput(BaseModel):
     tenant_id: str | None = None
     date_from: str | None = None
     date_to: str | None = None
-    timezone: str | None = "Europe/Madrid"
+    timezone: str | None = None
     status: str | None = None
     limit: int | None = 5
     service_ref: str | None = None
@@ -92,6 +92,7 @@ def _empty_payload(message: str, error_code: str) -> dict[str, Any]:
         "ok": False,
         "found": False,
         "count": 0,
+        "status": error_code,
         "items": [],
         "message": message,
         "raw_summary": {},
@@ -166,7 +167,8 @@ async def appointment_events(
     tenant_id: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    timezone: str | None = "Europe/Madrid",
+    *,
+    timezone: str,
     status: str | None = None,
     limit: int | None = 5,
     service_ref: str | None = None,
@@ -174,7 +176,12 @@ async def appointment_events(
     contact: AppointmentEventsContactInput | dict[str, Any] | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Get appointment/calendar events for a tenant and optional contact, date range or filters."""
+    """Get appointment/calendar events for a tenant and optional contact, date range or filters.
+
+    `timezone` must come from `contact_context.business_context.timezone`, tenant context, branch
+    context or an explicit user/business context. Do not use a hardcoded timezone or silently
+    fallback. If timezone is missing, ask/obtain `contact_context` first.
+    """
     payload = AppointmentEventsInput(
         tenant_id=tenant_id,
         date_from=date_from,
@@ -196,7 +203,7 @@ async def appointment_events(
     normalized_tenant_id = _normalize_text(payload.tenant_id)
     normalized_date_from = _normalize_text(payload.date_from)
     normalized_date_to = _normalize_text(payload.date_to)
-    normalized_timezone = _normalize_text(payload.timezone) or "Europe/Madrid"
+    normalized_timezone = _normalize_text(payload.timezone)
     normalized_status = _normalize_text(payload.status)
     normalized_service_ref = _normalize_text(payload.service_ref)
     normalized_owner_ref = _normalize_text(payload.owner_ref)
@@ -206,11 +213,12 @@ async def appointment_events(
     if isinstance(normalized_contact, dict):
         normalized_contact = {key: _normalize_text(value) for key, value in normalized_contact.items()}
 
-    if webhook_url is None:
-        return _empty_payload("Appointment events service is not configured.", "not_configured")
-
+    if normalized_timezone is None:
+        return _empty_payload("timezone is required to retrieve appointment events.", "validation_error")
     if normalized_tenant_id is None:
         return _empty_payload("tenant_id is required to retrieve appointment events.", "validation_error")
+    if webhook_url is None:
+        return _empty_payload("Appointment events service is not configured.", "not_configured")
 
     body = {
         "tool": "appointment_events",

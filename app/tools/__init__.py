@@ -29,11 +29,11 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_availability",
-            "description": "Get appointment availability slots for a tenant, date range and optional contact. Prefer service_id UUID from services_search; use service_ref only as fallback.",
+            "description": "Get appointment availability slots for a tenant, date range and optional contact. Prefer service_id UUID from services_search; use service_ref only as fallback. timezone must come from contact_context.business_context.timezone, tenant context, branch context or explicit user/business context. Do not hardcode a timezone or silently fallback; ask for contact_context first if timezone is missing.",
         },
         {
             "name": "appointment_events",
-            "description": "Get appointment/calendar events for a tenant and optional contact, date range or filters.",
+            "description": "Get appointment/calendar events for a tenant and optional contact, date range or filters. timezone must come from contact_context.business_context.timezone, tenant context, branch context or explicit user/business context. Do not hardcode a timezone or silently fallback; ask for contact_context first if timezone is missing.",
         },
         {
             "name": "appointment_confirm",
@@ -41,7 +41,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_reschedule",
-            "description": "Reschedule an existing appointment through n8n.",
+            "description": "Reschedule an existing appointment through n8n. timezone must come from contact_context.business_context.timezone, tenant context, branch context or explicit user/business context. Do not hardcode a timezone or silently fallback; ask for contact_context first if timezone is missing.",
         },
         {
             "name": "appointment_cancel",
@@ -49,7 +49,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_booking_invitation",
-            "description": "Create a booking invitation link through n8n. Prefer service_id UUID from services_search; use service_ref only as fallback.",
+            "description": "Create a booking invitation link through n8n. Prefer service_id UUID from services_search; use service_ref only as fallback. timezone must come from contact_context.business_context.timezone, tenant context, branch context or explicit user/business context. Do not hardcode a timezone or silently fallback; ask for contact_context first if timezone is missing.",
         },
         {
             "name": "services_search",
