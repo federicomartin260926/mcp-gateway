@@ -29,7 +29,7 @@ def build_available_tools(include_debug_tools: bool = False) -> list[dict[str, s
         },
         {
             "name": "appointment_availability",
-            "description": "Get appointment availability slots for a tenant, date range and optional contact. Prefer service_id UUID from services_search; use service_ref only as fallback. timezone must come from contact_context.business_context.timezone, tenant context, branch context or explicit user/business context. Do not hardcode a timezone or silently fallback; ask for contact_context first if timezone is missing.",
+            "description": "Get appointment availability slots for a tenant, date range and optional contact. Prefer service_id UUID from services_search; use service_ref only as fallback. timezone is optional; do not invent it. Pass it only when the caller has an explicit reliable timezone context; otherwise let downstream CRM resolve the business timezone from tenant/branch configuration.",
         },
         {
             "name": "appointment_events",

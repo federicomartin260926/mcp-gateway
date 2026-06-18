@@ -64,14 +64,18 @@ def _tool_input_properties(tools, tool_name: str) -> dict[str, object]:
     return {}
 
 
-def make_context(authorization: str | None = None):
+def make_context(authorization: str | None = None, request_id: str | None = None):
     headers = {}
     if authorization is not None:
         headers["Authorization"] = authorization
 
+    request = SimpleNamespace(headers=headers)
+    if request_id is not None:
+        request.state = SimpleNamespace(request_id=request_id)
+
     return SimpleNamespace(
         request_context=SimpleNamespace(
-            request=SimpleNamespace(headers=headers),
+            request=request,
         )
     )
 
@@ -730,7 +734,9 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
             json={
                 "ok": True,
                 "available": True,
-                "timezone": "Europe/Madrid",
+                "timezone": "Atlantic/Canary",
+                "timezoneSource": "tenant_branch",
+                "businessTimezone": "Atlantic/Canary",
                 "slots": [
                     {
                         "start": "2026-05-11T09:00:00+02:00",
@@ -774,7 +780,6 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         tenant_id="019dddb7-db7b-7cdd-963e-4294476ba1e7",
         date_from="2026-05-11",
         date_to="2026-05-15",
-        timezone="Atlantic/Canary",
         duration_minutes=30,
         limit=100,
         service_id="019e8ce0-0864-7720-af82-a5c98df2d2dd",
@@ -799,12 +804,13 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         "tenant_id": "019dddb7-db7b-7cdd-963e-4294476ba1e7",
         "date_from": "2026-05-11",
         "date_to": "2026-05-15",
-        "timezone": "Atlantic/Canary",
         "duration_minutes": 30,
         "limit": 100,
         "service_id": "019e8ce0-0864-7720-af82-a5c98df2d2dd",
         "service_ref": "maria-laser-axilas",
+        "owner_id": None,
         "owner_ref": None,
+        "owner_name": None,
         "contact": {
             "phone": "+34611949358",
             "email": None,
@@ -812,9 +818,12 @@ async def test_appointment_availability_posts_expected_payload(monkeypatch):
         },
         "source": "mcp-gateway",
     }
+    assert "timezone" not in captured["json"]
     assert payload["ok"] is True
     assert payload["available"] is True
     assert payload["timezone"] == "Atlantic/Canary"
+    assert payload["timezone_source"] == "tenant_branch"
+    assert payload["business_timezone"] == "Atlantic/Canary"
     assert payload["slots"][0]["owner"]["name"] == "Carla"
     assert payload["message"].startswith("Hay 6")
     assert payload["raw_summary"]["totalSlots"] == 6
@@ -992,21 +1001,6 @@ async def test_appointment_booking_invitation_posts_expected_payload(monkeypatch
 @pytest.mark.parametrize(
     "function, module, settings_key, kwargs, expected_message_fragment",
     [
-        (
-            appointment_availability,
-            appointment_availability_module,
-            "APPOINTMENT_AVAILABILITY_WEBHOOK_URL",
-            {
-                "tenant_id": "tenant-1",
-                "date_from": "2026-05-11",
-                "date_to": "2026-05-15",
-                "timezone": None,
-                "service_id": "service-1",
-                "owner_ref": "owner-1",
-                "contact": {"phone": "+34999999999"},
-            },
-            "timezone",
-        ),
         (
             appointment_events,
             appointment_events_module,
@@ -2053,6 +2047,123 @@ async def test_services_search_posts_expected_payload(monkeypatch):
     assert payload["found"] is True
     assert payload["count"] == 4
     assert payload["items"][0]["category"]["name"] == "Automatización"
+
+
+@pytest.mark.asyncio
+async def test_services_search_propagates_request_id_from_context(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "found": False,
+                "count": 0,
+                "items": [],
+                "categories": [],
+                "message": "No services found",
+                "raw_summary": {},
+            },
+        )
+
+    monkeypatch.setattr(
+        services_search_module,
+        "get_settings",
+        lambda: Settings(
+            SERVICES_SEARCH_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await services_search(query="whatsapp", ctx=make_context(request_id="req-123"))
+
+    assert captured["headers"]["X-Request-Id"] == "req-123"
+    assert payload["ok"] is True
+    assert payload["found"] is False
+
+
+def test_services_search_mcp_call_logs_request_id_and_posts_once(monkeypatch, caplog):
+    captured = {"calls": 0}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["calls"] += 1
+        captured["headers"] = headers
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "ok": True,
+                "found": False,
+                "count": 0,
+                "items": [],
+                "categories": [],
+                "message": "No services found",
+                "raw_summary": {},
+            },
+        )
+
+    monkeypatch.setattr(
+        services_search_module,
+        "get_settings",
+        lambda: Settings(
+            SERVICES_SEARCH_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+            SERVICES_SEARCH_TIMEOUT_SECONDS=11,
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    settings = Settings(MCP_ALLOWED_HOSTS="localhost,127.0.0.1,*.trycloudflare.com")
+    app = create_app(settings)
+
+    with caplog.at_level("INFO"):
+        with TestClient(app, base_url="https://acknowledged-quote-welding-riverside.trycloudflare.com") as client:
+            initialize_response = client.post(
+                "/mcp",
+                headers=MCP_HEADERS,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "test", "version": "1.0"},
+                    },
+                },
+                follow_redirects=False,
+            )
+            assert initialize_response.status_code == 200
+
+            call_response = client.post(
+                "/mcp",
+                headers=MCP_HEADERS,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "services_search", "arguments": {"query": "whatsapp"}},
+                },
+                follow_redirects=False,
+            )
+            assert call_response.status_code == 200
+            call_payload = decode_sse_json(call_response)
+            assert call_payload["result"]["content"][0]["text"]
+
+    assert captured["calls"] == 1
+    request_id = captured["headers"]["X-Request-Id"]
+    assert isinstance(request_id, str) and request_id
+    assert captured["json"]["tool"] == "services_search"
+
+    log_text = "\n".join(record.message for record in caplog.records)
+    assert f"mcp_request request_id={request_id}" in log_text
+    assert f"services_search request_id={request_id}" in log_text
+    assert f"n8n_webhook request_id={request_id}" in log_text
 
 
 @pytest.mark.asyncio
