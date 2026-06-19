@@ -65,9 +65,25 @@ def extract_request_authorization(ctx: Context | None) -> str | None:
     return None
 
 
+def extract_request_id(ctx: Context | None) -> str | None:
+    if ctx is None:
+        return None
+
+    request = getattr(getattr(ctx, "request_context", None), "request", None)
+    state = getattr(request, "state", None)
+    request_id = getattr(state, "request_id", None)
+    if isinstance(request_id, str):
+        normalized = request_id.strip()
+        if normalized:
+            return normalized
+
+    return None
+
+
 def build_webhook_headers(
     token: str | None,
     downstream_authorization: str | None = None,
+    request_id: str | None = None,
     auth_header_name: str = "Authorization",
 ) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
@@ -75,13 +91,16 @@ def build_webhook_headers(
         headers[auth_header_name] = f"Bearer {token}"
     if downstream_authorization:
         headers["X-Downstream-Authorization"] = downstream_authorization
+    if request_id:
+        headers["X-Request-Id"] = request_id
     return headers
 
 
-def log_webhook_auth(tool_name: str, downstream_authorization: str | None) -> None:
+def log_webhook_auth(tool_name: str, downstream_authorization: str | None, request_id: str | None = None) -> None:
     has_authorization, authorization_scheme, token_preview = summarize_authorization(downstream_authorization)
     logger.info(
-        "n8n_webhook tool=%s downstream_authorization_present=%s downstream_authorization_scheme=%s downstream_authorization_preview=%s",
+        "n8n_webhook request_id=%s tool=%s downstream_authorization_present=%s downstream_authorization_scheme=%s downstream_authorization_preview=%s",
+        request_id or "-",
         tool_name,
         has_authorization,
         authorization_scheme or "-",
@@ -97,15 +116,22 @@ async def post_webhook(
     downstream_authorization: str | None = None,
     auth_header_name: str = "Authorization",
     tool_name: str = "n8n_webhook",
+    request_id: str | None = None,
 ) -> dict[str, Any]:
-    headers = build_webhook_headers(token, downstream_authorization, auth_header_name=auth_header_name)
-    log_webhook_auth(tool_name, downstream_authorization)
+    headers = build_webhook_headers(
+        token,
+        downstream_authorization,
+        request_id=request_id,
+        auth_header_name=auth_header_name,
+    )
+    log_webhook_auth(tool_name, downstream_authorization, request_id=request_id)
 
     timeout = httpx.Timeout(timeout_seconds)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(url, json=body, headers=headers)
         response.raise_for_status()
         return response.json()
+
 
 def normalize_text(value: str | None) -> str | None:
     if value is None:

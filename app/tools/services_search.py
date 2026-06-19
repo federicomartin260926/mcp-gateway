@@ -8,7 +8,7 @@ from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.settings import get_settings
-from app.tools._appointment_common import extract_request_authorization, post_webhook
+from app.tools._appointment_common import extract_request_authorization, extract_request_id, post_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,7 @@ async def _post_services_search(
     timeout_seconds: float,
     body: dict[str, Any],
     downstream_authorization: str | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     return await post_webhook(
         url,
@@ -145,6 +146,7 @@ async def _post_services_search(
         body,
         downstream_authorization=downstream_authorization,
         tool_name="services_search",
+        request_id=request_id,
     )
 
 
@@ -178,6 +180,9 @@ async def services_search(
     webhook_token = _normalize_text(settings.n8n_webhook_bearer_token)
     timeout_seconds = settings.services_search_timeout_seconds
     downstream_authorization = extract_request_authorization(ctx)
+    request_id = extract_request_id(ctx)
+
+    logger.info("services_search request_id=%s", request_id or "-")
 
     normalized_tenant_id = _normalize_text(payload.tenant_id)
     normalized_query = _normalize_text(payload.query)
@@ -210,6 +215,7 @@ async def services_search(
             timeout_seconds,
             body,
             downstream_authorization=downstream_authorization,
+            request_id=request_id,
         )
     except httpx.TimeoutException:
         return _empty_payload("Services search request timed out.", "timeout")

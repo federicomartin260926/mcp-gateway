@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -132,9 +133,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def mcp_request_middleware(request: Request, call_next):
         mcp_path = request.url.path.startswith("/mcp")
+        request_id = None
         response = None
 
         if mcp_path:
+            request_id = uuid4().hex
+            request.state.request_id = request_id
             if not host_is_allowed(request.headers.get("host"), allowed_hosts):
                 response = JSONResponse({"detail": "Invalid Host header"}, status_code=421)
 
@@ -158,7 +162,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 authorization = request.headers.get("Authorization", "")
                 has_authorization, authorization_scheme = _authorization_summary(authorization)
                 logger.info(
-                    "mcp_request method=%s path=%s status_code=%s user_agent=%s has_authorization=%s authorization_scheme=%s",
+                    "mcp_request request_id=%s method=%s path=%s status_code=%s user_agent=%s has_authorization=%s authorization_scheme=%s",
+                    request_id or "-",
                     request.method,
                     request.url.path,
                     response.status_code if response is not None else 500,
