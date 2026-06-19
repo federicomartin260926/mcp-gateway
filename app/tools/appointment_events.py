@@ -5,12 +5,22 @@ from typing import Any
 
 import httpx
 from mcp.server.fastmcp import Context
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.settings import get_settings
 from app.tools._appointment_common import extract_request_authorization, post_webhook
 
 logger = logging.getLogger(__name__)
+
+APPOINTMENT_EVENT_STATUSES = {"active", "cancelled", "completed", "no_show"}
+APPOINTMENT_EVENT_STATUS_ALIASES = {
+    "canceled": "cancelled",
+    "cancel": "cancelled",
+    "no-show": "no_show",
+    "no show": "no_show",
+    "noshow": "no_show",
+}
+APPOINTMENT_EVENT_ACTIVE_SYNONYMS = {"scheduled", "confirmed", "booked", "reserved"}
 
 
 def _normalize_text(value: str | None) -> str | None:
@@ -25,6 +35,36 @@ def _normalize_text(value: str | None) -> str | None:
         return None
 
     return normalized
+
+
+def _normalize_status(value: str | None) -> tuple[str | None, str | None]:
+    normalized = _normalize_text(value)
+    if normalized is None:
+        return None, None
+
+    lowered = normalized.lower()
+    if lowered in APPOINTMENT_EVENT_STATUS_ALIASES:
+        return APPOINTMENT_EVENT_STATUS_ALIASES[lowered], None
+    if lowered in APPOINTMENT_EVENT_STATUSES:
+        return lowered, None
+
+    supported_statuses = ", ".join(sorted(APPOINTMENT_EVENT_STATUSES))
+    if lowered in APPOINTMENT_EVENT_ACTIVE_SYNONYMS:
+        return (
+            None,
+            (
+                f"Unsupported appointment status '{normalized}'. Use active for current appointments. "
+                f"Supported statuses: {supported_statuses}."
+            ),
+        )
+
+    return (
+        None,
+        (
+            f"Unsupported appointment status '{normalized}'. Supported statuses: {supported_statuses}. "
+            "Use active for current appointments."
+        ),
+    )
 
 
 def _normalize_value(value: Any) -> Any:
@@ -80,7 +120,16 @@ class AppointmentEventsInput(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     timezone: str | None = None
-    status: str | None = None
+    status: str | None = Field(
+        default=None,
+        description=(
+            "Optional functional status filter. Supported values: active, cancelled, completed, no_show. "
+            "Use active for current appointments that can be rescheduled or cancelled. "
+            "Use cancelled, completed, or no_show only when explicitly needed. "
+            "Omit status to search all statuses. Integration-specific adapters such as n8n map these "
+            "functional statuses to downstream systems."
+        ),
+    )
     limit: int | None = 5
     service_ref: str | None = None
     owner_ref: str | None = None
@@ -181,18 +230,28 @@ async def appointment_events(
     `timezone` must come from `contact_context.business_context.timezone`, tenant context, branch
     context or an explicit user/business context. Do not use a hardcoded timezone or silently
     fallback. If timezone is missing, ask/obtain `contact_context` first.
+
+    `status` is optional and uses a functional calendar contract:
+    - `active`: current appointments that can be rescheduled or cancelled.
+    - `cancelled`, `completed`, `no_show`: only when explicitly requested.
+    - omit `status` to search all statuses.
+    Integration-specific adapters such as n8n must map these functional statuses to downstream
+    systems.
     """
-    payload = AppointmentEventsInput(
-        tenant_id=tenant_id,
-        date_from=date_from,
-        date_to=date_to,
-        timezone=timezone,
-        status=status,
-        limit=limit,
-        service_ref=service_ref,
-        owner_ref=owner_ref,
-        contact=contact,
-    )
+    try:
+        payload = AppointmentEventsInput(
+            tenant_id=tenant_id,
+            date_from=date_from,
+            date_to=date_to,
+            timezone=timezone,
+            status=status,
+            limit=limit,
+            service_ref=service_ref,
+            owner_ref=owner_ref,
+            contact=contact,
+        )
+    except ValidationError:
+        return _empty_payload("Request payload is invalid.", "validation_error")
 
     settings = get_settings()
     webhook_url = _normalize_text(settings.appointment_events_webhook_url)
@@ -204,7 +263,7 @@ async def appointment_events(
     normalized_date_from = _normalize_text(payload.date_from)
     normalized_date_to = _normalize_text(payload.date_to)
     normalized_timezone = _normalize_text(payload.timezone)
-    normalized_status = _normalize_text(payload.status)
+    normalized_status, status_error = _normalize_status(payload.status)
     normalized_service_ref = _normalize_text(payload.service_ref)
     normalized_owner_ref = _normalize_text(payload.owner_ref)
     normalized_limit = _coerce_int(payload.limit, 5, 1, 10)
@@ -217,6 +276,8 @@ async def appointment_events(
         return _empty_payload("timezone is required to retrieve appointment events.", "validation_error")
     if normalized_tenant_id is None:
         return _empty_payload("tenant_id is required to retrieve appointment events.", "validation_error")
+    if status_error is not None:
+        return _empty_payload(status_error, "validation_error")
     if webhook_url is None:
         return _empty_payload("Appointment events service is not configured.", "not_configured")
 

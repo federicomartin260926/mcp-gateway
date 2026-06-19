@@ -1144,6 +1144,99 @@ async def test_agenda_tools_forward_explicit_timezone_exactly(
     assert payload["ok"] is True
 
 
+@pytest.mark.parametrize(
+    "raw_status, expected_status, expected_fragment",
+    [
+        ("active", "active", None),
+        ("cancelled", "cancelled", None),
+        ("canceled", "cancelled", None),
+        ("no show", "no_show", None),
+        ("confirmed", None, "Use active for current appointments."),
+        ("scheduled", None, "Use active for current appointments."),
+        ("unknown", None, "Supported statuses:"),
+    ],
+)
+def test_appointment_events_normalize_status(raw_status, expected_status, expected_fragment):
+    normalized_status, error_message = appointment_events_module._normalize_status(raw_status)
+
+    assert normalized_status == expected_status
+    if expected_fragment is None:
+        assert error_message is None
+    else:
+        assert error_message is not None
+        assert expected_fragment in error_message
+
+
+@pytest.mark.asyncio
+async def test_appointment_events_rejects_legacy_statuses_without_calling_upstream(monkeypatch):
+    called = False
+
+    async def fake_post(self, url, json=None, headers=None):
+        nonlocal called
+        called = True
+        raise AssertionError("upstream call should not happen when status is invalid")
+
+    monkeypatch.setattr(
+        appointment_events_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_EVENTS_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_events(
+        tenant_id="tenant-1",
+        date_from="2026-05-11",
+        date_to="2026-05-15",
+        timezone="Atlantic/Canary",
+        status="confirmed",
+        service_ref="service-slug",
+        owner_ref="owner-1",
+        contact={"phone": "+34999999999"},
+    )
+
+    assert called is False
+    assert payload["ok"] is False
+    assert payload["status"] == "validation_error"
+    assert payload["error_code"] == "validation_error"
+    assert "Use active for current appointments." in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_appointment_events_forwards_functional_status_to_upstream(monkeypatch):
+    captured = {}
+
+    async def fake_post(self, url, json=None, headers=None):
+        captured["json"] = json
+        return httpx.Response(200, request=httpx.Request("POST", url), json={"ok": True, "found": True, "items": [], "message": "ok"})
+
+    monkeypatch.setattr(
+        appointment_events_module,
+        "get_settings",
+        lambda: Settings(
+            APPOINTMENT_EVENTS_WEBHOOK_URL="https://n8n.example/webhook",
+            N8N_WEBHOOK_BEARER_TOKEN="secret-token",
+        ),
+    )
+    monkeypatch.setattr(appointment_common_module.httpx.AsyncClient, "post", fake_post)
+
+    payload = await appointment_events(
+        tenant_id="tenant-1",
+        date_from="2026-05-11",
+        date_to="2026-05-15",
+        timezone="Atlantic/Canary",
+        status="no show",
+        service_ref="service-slug",
+        owner_ref="owner-1",
+        contact={"phone": "+34999999999"},
+    )
+
+    assert captured["json"]["status"] == "no_show"
+    assert payload["ok"] is True
+
+
 @pytest.mark.asyncio
 async def test_contact_context_without_webhook_returns_not_configured(monkeypatch):
     monkeypatch.setattr(contact_context_module, "get_settings", lambda: Settings(CONTACT_CONTEXT_WEBHOOK_URL=""))
